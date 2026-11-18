@@ -1,0 +1,53 @@
+# Publica una versión automáticamente cuando subes una etiqueta  vX.Y.Z
+# Uso:   git tag v1.0.1  &&  git push origin v1.0.1
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Calcular versión desde la etiqueta
+        shell: pwsh
+        run: |
+          $v = "${{ github.ref_name }}".TrimStart('v')
+          "VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - run: flutter config --enable-windows-desktop
+      - run: flutter pub get
+
+      - name: Compilar (release)
+        shell: pwsh
+        run: flutter build windows --release --dart-define=APP_VERSION=$env:VERSION --dart-define=APP_BUILD=${{ github.run_number }}
+
+      - name: Empaquetar .zip (portátil y usado por el actualizador)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "dist\Darter-$env:VERSION-windows-x64.zip"
+
+      - name: Crear instalador (.exe)
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:VERSION" distribution\darter_installer.iss
+
+      - name: Publicar en GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
