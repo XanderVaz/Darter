@@ -13,7 +13,7 @@
 AppId={{654FF541-F521-4498-9E46-18EC49CDE8A0}
 AppName={#AppName}
 AppVersion={#AppVersion}
-AppPublisher=TU NOMBRE
+AppPublisher=XnderDevs
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 PrivilegesRequired=lowest
