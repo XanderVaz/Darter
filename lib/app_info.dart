@@ -8,16 +8,16 @@ const kAppVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.0.0')
 const kBuildNumber = String.fromEnvironment('APP_BUILD', defaultValue: '1');
 
 // ── Creador (aparece en «Acerca de») ──
-const kCreatorName = 'TU NOMBRE'; // ← cámbialo
+const kCreatorName = 'XndrDevs'; // ← cámbialo
 const kCreatorRole = 'Creador y desarrollador';
-const kCreatorEmail = ''; // opcional: correo de contacto
-const kCreatorWebsite = ''; // opcional: https://tusitio.com
-const kCreatorGithub = ''; // opcional: tu usuario de GitHub (sin @)
+const kCreatorEmail = 'darterapp@gmail.com'; // opcional: correo de contacto
+const kCreatorWebsite = 'https://xndrdevs.xyz/'; // opcional: https://tusitio.com
+const kCreatorGithub = 'XanderVaz'; // opcional: tu usuario de GitHub (sin @)
 
 // ── Repositorio de GitHub (actualizaciones, notas y reportes) ──
-const kGithubOwner = 'TU_USUARIO'; // ← usuario u organización dueña del repo
-const kGithubRepo = 'darter'; // ← nombre del repositorio
-const kRepoConfigured = kGithubOwner != 'TU_USUARIO';
+const kGithubOwner = 'XanderVaz'; // ← usuario u organización dueña del repo
+const kGithubRepo = 'Darter'; // ← nombre del repositorio
+const kRepoConfigured = kGithubOwner != 'XanderVaz';
 
 // ── Legal ──
 const kCopyrightYear = '2026';
