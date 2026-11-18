@@ -25,7 +25,9 @@ const kLicenseName = 'Todos los derechos reservados';
 const kAppDescription =
     'Un IDE moderno y ligero hecho solo para Dart y Flutter: editor Monaco, depurador, pruebas, Git, localización y mucho más.';
 
-String get kRepoUrl => 'https://github.com/$kGithubOwner/$kGithubRepo';
+//String get kRepoUrl => 'https://github.com/$kGithubOwner/$kGithubRepo';
+String get kRepoUrl => 'https://github.com/XanderVaz/Darter';
+
 
 String issueUrl({String? body}) {
   final b = body == null ? '' : '?body=${Uri.encodeQueryComponent(body)}';
