@@ -1,80 +1,53 @@
-name: Build Linux Installer
+# Publica una versión automáticamente cuando subes una etiqueta  vX.Y.Z
+# Uso:   git tag v1.0.1  &&  git push origin v1.0.1
+name: Release
 
 on:
   push:
-    tags:
-      - 'v*' # Se activa solo cuando subes un tag como v0.1.4
+    tags: ['v*']
+
+permissions:
+  contents: write
 
 jobs:
-  build-linux:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write # Necesario para publicar el instalador en Releases
-
+  windows:
+    runs-on: windows-latest
     steps:
-      - name: Descargar código
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Obtener versión desde el tag
-        id: get_version
-        run: |
-          # Quita la "v" inicial (ej: v0.1.4 -> 0.1.4)
-          VERSION=${GITHUB_REF_NAME#v}
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-
-      - name: Instalar dependencias de Linux para Flutter
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
-
-      - name: Configurar Flutter
-        uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
+          channel: stable
+          cache: true
 
-      - name: Instalar paquetes y compilar
+      - name: Calcular versión desde la etiqueta
+        shell: pwsh
         run: |
-          flutter pub get
-          flutter build linux --release
+          $v = "${{ github.ref_name }}".TrimStart('v')
+          "VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Empaquetar instalador .deb con versión dinámica
+      - run: flutter config --enable-windows-desktop
+      - run: flutter pub get
+
+      - name: Compilar (release)
+        shell: pwsh
+        run: flutter build windows --release --dart-define=APP_VERSION=$env:VERSION --dart-define=APP_BUILD=${{ github.run_number }}
+
+      - name: Empaquetar .zip (portátil y usado por el actualizador)
+        shell: pwsh
         run: |
-          PKG_NAME="Darter-${{ env.VERSION }}-linux-x64.deb"
-          
-          mkdir -p darter-deb/DEBIAN
-          mkdir -p darter-deb/usr/local/bin/darter
-          mkdir -p darter-deb/usr/share/applications
-          
-          # Copiar archivos compilados
-          cp -r build/linux/x64/release/bundle/* darter-deb/usr/local/bin/darter/
-          chmod +x darter-deb/usr/local/bin/darter/darter
-          
-          # Archivo de control con la versión del tag
-          cat <<EOF > darter-deb/DEBIAN/control
-          Package: darter
-          Version: ${{ env.VERSION }}
-          Section: devel
-          Priority: optional
-          Architecture: amd64
-          Maintainer: XanderVaz
-          Description: IDE para Flutter y Dart
-          EOF
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "dist\Darter-$env:VERSION-windows-x64.zip"
 
-          # Acceso directo en el menú de aplicaciones
-          cat <<EOF > darter-deb/usr/share/applications/darter.desktop
-          [Desktop Entry]
-          Name=Darter
-          Comment=IDE para Flutter y Dart
-          Exec=/usr/local/bin/darter/darter
-          Type=Application
-          Categories=Development;IDE;
-          EOF
+      - name: Crear instalador (.exe)
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:VERSION" distribution\darter_installer.iss
 
-          # Construir el archivo .deb final
-          dpkg-deb --build darter-deb "$PKG_NAME"
-          echo "DEB_FILE=$PKG_NAME" >> $GITHUB_ENV
-
-      - name: Adjuntar instalador a GitHub Release
+      - name: Publicar en GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.DEB_FILE }}
+          files: dist/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
