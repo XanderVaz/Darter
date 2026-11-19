@@ -1,0 +1,75 @@
+name: Compilar Flutter para Linux
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: # Permite ejecutarlo manualmente desde GitHub
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Instalar dependencias de Linux para Flutter
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+
+      - name: Configurar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Instalar paquetes y compilar
+        run: |
+          flutter pub get
+          flutter build linux --release
+
+      - name: Guardar ejecutable como Artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: Darter-Linux-Release
+          path: build/linux/x64/release/bundle/
+
+      - name: Crear estructura de paquete .deb
+        run: |
+          mkdir -p darter-deb/DEBIAN
+          mkdir -p darter-deb/usr/local/bin/darter
+          mkdir -p darter-deb/usr/share/applications
+          
+          # Copiar archivos compilados de Flutter
+          cp -r build/linux/x64/release/bundle/* darter-deb/usr/local/bin/darter/
+          
+          # Crear archivo de control del instalador
+          cat <<EOF > darter-deb/DEBIAN/control
+          Package: darter
+          Version: 1.0.0
+          Section: devel
+          Priority: optional
+          Architecture: amd64
+          Maintainer: XanderVaz
+          Description: IDE para Flutter y Dart
+          EOF
+
+          # Crear acceso directo en el menú de aplicaciones
+          cat <<EOF > darter-deb/usr/share/applications/darter.desktop
+          [Desktop Entry]
+          Name=Darter
+          Comment=IDE para Flutter y Dart
+          Exec=/usr/local/bin/darter/darter
+          Type=Application
+          Categories=Development;IDE;
+          EOF
+
+          # Empaquetar el instalador .deb
+          dpkg-deb --build darter-deb darter_1.0.0_amd64.deb
+
+      - name: Subir instalador .deb como Artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: Darter-Linux-Installer-DEB
+          path: darter_1.0.0_amd64.deb
+
