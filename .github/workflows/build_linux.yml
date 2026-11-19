@@ -43,8 +43,12 @@ jobs:
           mkdir -p darter-deb/usr/local/bin/darter
           mkdir -p darter-deb/usr/share/applications
           
+          # Copiar todos los archivos compilados
           cp -r build/linux/x64/release/bundle/* darter-deb/usr/local/bin/darter/
-          chmod +x darter-deb/usr/local/bin/darter/darter
+          
+          # Detectar automáticamente el nombre del ejecutable principal
+          EXEC_NAME=$(find darter-deb/usr/local/bin/darter -maxdepth 1 -type f -executable -printf "%f\n" | head -n 1)
+          chmod +x "darter-deb/usr/local/bin/darter/$EXEC_NAME"
           
           cat <<EOF > darter-deb/DEBIAN/control
           Package: darter
@@ -60,13 +64,14 @@ jobs:
           [Desktop Entry]
           Name=Darter
           Comment=IDE para Flutter y Dart
-          Exec=/usr/local/bin/darter/darter
+          Exec=/usr/local/bin/darter/$EXEC_NAME
           Type=Application
           Categories=Development;IDE;
           EOF
 
           dpkg-deb --build darter-deb "$PKG_NAME"
           echo "DEB_FILE=$PKG_NAME" >> $GITHUB_ENV
+
 
       - name: Publicar instalador en GitHub Release
         uses: softprops/action-gh-release@v2
