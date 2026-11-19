@@ -10,11 +10,10 @@
 #define AppExe "darter.exe"
 
 [Setup]
-AppId={{654FF541-F521-4498-9E46-18EC49CDE8A0}
+AppId={654FF541-F521-4498-9E46-18EC49CDE8A0}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher=XnderDevs
->>>>>>> e1fbfba6b78b61dc736a68e88ae301978c60af30
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 PrivilegesRequired=lowest
