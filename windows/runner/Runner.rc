@@ -92,9 +92,9 @@ BEGIN
             VALUE "CompanyName", "com.example" "\0"
             VALUE "FileDescription", "dart_ide" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "dart_ide" "\0"
+            VALUE "InternalName", "darter" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "dart_ide.exe" "\0"
+            VALUE "OriginalFilename", "darter.exe" "\0"
             VALUE "ProductName", "dart_ide" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
