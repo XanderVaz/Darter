@@ -4,7 +4,7 @@
 
 /// Versión que muestra «Acerca de» y que compara el actualizador.
 /// Se puede fijar al compilar:  flutter build windows --dart-define=APP_VERSION=1.2.0
-const kAppVersion = String.fromEnvironment('APP_VERSION', defaultValue: '0.1.10');
+const kAppVersion = String.fromEnvironment('APP_VERSION', defaultValue: '0.1.11');
 const kBuildNumber = String.fromEnvironment('APP_BUILD', defaultValue: '1');
 
 // ── Creador (aparece en «Acerca de») ──
