@@ -4,7 +4,10 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
+<<<<<<< HEAD
 import '../app_info.dart';
+=======
+>>>>>>> e1fbfba6b78b61dc736a68e88ae301978c60af30
 
 const _headers = {'Accept': 'application/vnd.github+json', 'User-Agent': 'Darter-Updater', 'X-GitHub-Api-Version': '2022-11-28'};
 
@@ -181,6 +184,7 @@ Future<bool?> verifyAsset(File f, ReleaseAsset a, ReleaseInfo r) async {
   return actual != null && actual == expected;
 }
 
+<<<<<<< HEAD
 /// Estado de la firma Authenticode de un archivo (solo Windows): status = Valid, NotSigned, HashMismatch…
 Future<({String status, String subject})> readSignature(String path) async {
   if (!Platform.isWindows) return (status: 'NA', subject: '');
@@ -207,20 +211,28 @@ Future<String?> _checkSignature(String path) async {
   return null;
 }
 
+=======
+>>>>>>> e1fbfba6b78b61dc736a68e88ae301978c60af30
 /// Instala lo descargado. Devuelve un mensaje si NO reinicia la app; null si se reinicia sola.
 Future<String?> applyUpdate(File f) async {
   final n = f.path.toLowerCase();
   if (Platform.isWindows) {
     if (n.endsWith('.exe')) {
+<<<<<<< HEAD
       final bad = await _checkSignature(f.path);
       if (bad != null) return bad;
+=======
+>>>>>>> e1fbfba6b78b61dc736a68e88ae301978c60af30
       await Process.start(f.path, [], mode: ProcessStartMode.detached);
       await Future.delayed(const Duration(milliseconds: 700));
       exit(0);
     }
     if (n.endsWith('.msi')) {
+<<<<<<< HEAD
       final bad = await _checkSignature(f.path);
       if (bad != null) return bad;
+=======
+>>>>>>> e1fbfba6b78b61dc736a68e88ae301978c60af30
       await Process.start('msiexec', ['/i', f.path], mode: ProcessStartMode.detached);
       await Future.delayed(const Duration(milliseconds: 700));
       exit(0);
@@ -254,6 +266,7 @@ Future<String?> _applyWindowsZip(File zip) async {
     }
   }
   if (src == null) return 'El .zip no contiene una compilación de Flutter para Windows (falta flutter_windows.dll).';
+<<<<<<< HEAD
   final newExe = File(p.join(src, p.basename(exe)));
   if (newExe.existsSync()) {
     final bad = await _checkSignature(newExe.path);
@@ -261,6 +274,8 @@ Future<String?> _applyWindowsZip(File zip) async {
   } else if (kExpectedSigner.isNotEmpty) {
     return 'El .zip no contiene ${p.basename(exe)}, así que no se puede verificar la firma.';
   }
+=======
+>>>>>>> e1fbfba6b78b61dc736a68e88ae301978c60af30
   final bat = File(p.join(p.dirname(zip.path), 'darter_update.bat'));
   bat.writeAsStringSync([
     '@echo off',

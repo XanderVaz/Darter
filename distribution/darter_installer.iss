@@ -4,7 +4,11 @@
 ; AJUSTA: AppPublisher y el nombre del .exe (el nombre del proyecto de Flutter, p. ej. darter.exe).
 
 #ifndef AppVersion
+<<<<<<< HEAD
   #define AppVersion "0.1.6"
+=======
+  #define AppVersion "0.1.4"
+>>>>>>> e1fbfba6b78b61dc736a68e88ae301978c60af30
 #endif
 #define AppName "Darter"
 #define AppExe "darter.exe"
@@ -13,7 +17,11 @@
 AppId={{654FF541-F521-4498-9E46-18EC49CDE8A0}
 AppName={#AppName}
 AppVersion={#AppVersion}
+<<<<<<< HEAD
 AppPublisher=TU NOMBRE
+=======
+AppPublisher=XnderDevs
+>>>>>>> e1fbfba6b78b61dc736a68e88ae301978c60af30
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 PrivilegesRequired=lowest
