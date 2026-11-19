@@ -36,10 +36,7 @@ class _About extends StatefulWidget {
 class _AboutState extends State<_About> {
   IdeState get s => widget.s;
   Map<String, String> sdk = {};
-<<<<<<< HEAD
   String signText = 'comprobando…';
-=======
->>>>>>> e1fbfba6b78b61dc736a68e88ae301978c60af30
 
   @override
   void initState() {
@@ -57,7 +54,6 @@ class _AboutState extends State<_About> {
         sdk = {'Flutter': '${j['frameworkVersion']} · ${j['channel']}', 'Dart': '${j['dartSdkVersion']}'.split(' ').first};
       }
     } catch (_) {}
-<<<<<<< HEAD
     try {
       if (Platform.isWindows) {
         final sg = await readSignature(Platform.resolvedExecutable);
@@ -68,17 +64,12 @@ class _AboutState extends State<_About> {
     } catch (_) {
       signText = 'No disponible';
     }
-=======
->>>>>>> e1fbfba6b78b61dc736a68e88ae301978c60af30
     if (mounted) setState(() {});
   }
 
   List<(String, String)> _rows() => [
         ('Versión', 'v$kAppVersion  (compilación $kBuildNumber)'),
-<<<<<<< HEAD
         ('Firma digital', signText),
-=======
->>>>>>> e1fbfba6b78b61dc736a68e88ae301978c60af30
         ('Canal de actualizaciones', s.betaChannel ? 'Beta' : 'Estable'),
         ('Flutter SDK', sdk['Flutter'] ?? 'no detectado'),
         ('Dart SDK', sdk['Dart'] ?? 'no detectado'),
