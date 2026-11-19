@@ -115,6 +115,7 @@ class IdeState extends ChangeNotifier {
   bool minimap = true, wordWrap = false, autoSave = false, formatOnSave = false, autoPubGet = true;
   int settingsRev = 0, saveRev = 0;
   Timer? _autoTimer;
+  final dirtyRev = ValueNotifier<int>(0);
   Future<bool> Function()? confirmDiscard;
   bool get hasDirty => docs.any((d) => d.dirty);
   final themeNotifier = ValueNotifier<IdeTheme>(IdeTheme.all.first);
@@ -144,16 +145,29 @@ class IdeState extends ChangeNotifier {
   void Function(String path)? onDocClosed;
   void Function(String path, String text)? onExternalChange;
   StreamSubscription? _watchSub;
-  Timer? _watchTimer, _diagTimer;
+  Timer? _watchTimer, _diagTimer, _gitTimer;
+  String _gitSig = '';
 
   bool get isRunning => _running != null || _dap != null;
   OpenDoc? get current => active >= 0 && active < docs.length ? docs[active] : null;
+  bool? _flutterCache;
+  String? _flutterKey;
+  int _flutterAt = 0;
+
+  /// ¿El proyecto abierto es Flutter? (con caché de 3 s: antes leía el archivo en cada redibujado)
   bool get isFlutter {
+    final r = root;
+    if (r == null) return false;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (_flutterCache != null && _flutterKey == r && now - _flutterAt < 3000) return _flutterCache!;
+    var v = false;
     try {
-      return File(p.join(root!, 'pubspec.yaml')).readAsStringSync().contains(RegExp(r'sdk:\s*flutter'));
-    } catch (_) {
-      return false;
-    }
+      v = File(p.join(r, 'pubspec.yaml')).readAsStringSync().contains(RegExp(r'sdk:\s*flutter'));
+    } catch (_) {}
+    _flutterCache = v;
+    _flutterKey = r;
+    _flutterAt = now;
+    return v;
   }
 
   String get _tool => isFlutter ? 'flutter' : 'dart';
@@ -182,7 +196,38 @@ class IdeState extends ChangeNotifier {
     _add(m);
     if (!m.contains('\n') && m.length < 160) onToast?.call(m);
   }
-  void refresh() => notifyListeners();
+  int fsRev = 0;
+  final _dirCache = <String, ({DateTime m, int rev, List<FileSystemEntity> items})>{};
+
+  /// Lista un directorio con caché (se invalida si cambia su fecha de modificación o al refrescar).
+  List<FileSystemEntity> listDir(String dir) {
+    DateTime m;
+    try {
+      m = Directory(dir).statSync().modified;
+    } catch (_) {
+      return const [];
+    }
+    final c = _dirCache[dir];
+    if (c != null && c.m == m && c.rev == fsRev) return c.items;
+    List<FileSystemEntity> items;
+    try {
+      items = Directory(dir).listSync()
+        ..sort((a, b) {
+          final ad = a is Directory, bd = b is Directory;
+          if (ad != bd) return ad ? -1 : 1;
+          return p.basename(a.path).toLowerCase().compareTo(p.basename(b.path).toLowerCase());
+        });
+    } catch (_) {
+      items = const [];
+    }
+    _dirCache[dir] = (m: m, rev: fsRev, items: items);
+    return items;
+  }
+
+  void refresh() {
+    fsRev++;
+    notifyListeners();
+  }
 
   // ---------- Persistencia ----------
   Future<void> restore() async {
@@ -305,8 +350,15 @@ class IdeState extends ChangeNotifier {
         try {
           if (p.split(p.relative(e.path, from: root!)).any(kHidden.contains)) return;
         } catch (_) {}
+        if (e.type == FileSystemEvent.modify) {
+          // cambios de contenido: solo actualiza Git (no reconstruye toda la interfaz)
+          _gitTimer?.cancel();
+          _gitTimer = Timer(const Duration(milliseconds: 1500), refreshGit);
+          return;
+        }
         _watchTimer?.cancel();
-        _watchTimer = Timer(const Duration(milliseconds: 500), () {
+        _watchTimer = Timer(const Duration(milliseconds: 600), () {
+          fsRev++;
           notifyListeners();
           refreshGit();
         });
@@ -401,6 +453,14 @@ class IdeState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void markDirty(String path) {
+    final d = _doc(path);
+    if (d != null && !d.dirty) {
+      d.dirty = true;
+      dirtyRev.value++;
+    }
+  }
+
   void onEdit(String path, String text) {
     final d = _doc(path);
     if (d == null) return;
@@ -409,7 +469,7 @@ class IdeState extends ChangeNotifier {
     if (_isDart(path)) _lsp?.change(path, text, d.version);
     if (!d.dirty) {
       d.dirty = true;
-      notifyListeners();
+      dirtyRev.value++;
     }
     if (autoSave) {
       _autoTimer?.cancel();
@@ -627,8 +687,12 @@ class IdeState extends ChangeNotifier {
       if (path.contains(' -> ')) path = path.split(' -> ').last;
       ch.add(GitChange(l[0], l[1], path.replaceAll('"', '')));
     }
+    final sig = '$gitBranch|$gitMerging|${ch.map((x) => '${x.x}${x.y}${x.path}').join(';')}';
     gitChanges = ch;
-    notifyListeners();
+    if (sig != _gitSig) {
+      _gitSig = sig;
+      notifyListeners();
+    }
   }
 
   Future<void> gitRun(List<String> args) async {

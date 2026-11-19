@@ -171,7 +171,7 @@ class LspClient {
     final r = await _request('textDocument/completion', _pos(path, l, c));
     final items = (r is Map ? r['items'] : r) as List? ?? [];
     return [
-      for (final i in items.take(300))
+      for (final i in items.take(120))
         {
           'label': '${i['label']}',
           'kind': i['kind'] ?? 1,

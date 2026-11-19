@@ -1,17 +1,24 @@
-name: Compilar Flutter para Linux
+name: Build Linux Installer
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch: # Permite ejecutarlo manualmente desde GitHub
+    tags:
+      - 'v*' # Se ejecuta automáticamente cuando subes un tag como v0.1.4
 
 jobs:
   build-linux:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Obligatorio para poder adjuntar archivos al Release
 
     steps:
       - name: Descargar código
         uses: actions/checkout@v4
+
+      - name: Extraer versión del tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Instalar dependencias de Linux para Flutter
         run: |
@@ -28,25 +35,20 @@ jobs:
           flutter pub get
           flutter build linux --release
 
-      - name: Guardar ejecutable como Artefacto
-        uses: actions/upload-artifact@v4
-        with:
-          name: Darter-Linux-Release
-          path: build/linux/x64/release/bundle/
-
-      - name: Crear estructura de paquete .deb
+      - name: Crear paquete .deb con versión dinámica
         run: |
+          PKG_NAME="Darter-${{ env.VERSION }}-linux-x64.deb"
+          
           mkdir -p darter-deb/DEBIAN
           mkdir -p darter-deb/usr/local/bin/darter
           mkdir -p darter-deb/usr/share/applications
           
-          # Copiar archivos compilados de Flutter
           cp -r build/linux/x64/release/bundle/* darter-deb/usr/local/bin/darter/
+          chmod +x darter-deb/usr/local/bin/darter/darter
           
-          # Crear archivo de control del instalador
           cat <<EOF > darter-deb/DEBIAN/control
           Package: darter
-          Version: 1.0.0
+          Version: ${{ env.VERSION }}
           Section: devel
           Priority: optional
           Architecture: amd64
@@ -54,7 +56,6 @@ jobs:
           Description: IDE para Flutter y Dart
           EOF
 
-          # Crear acceso directo en el menú de aplicaciones
           cat <<EOF > darter-deb/usr/share/applications/darter.desktop
           [Desktop Entry]
           Name=Darter
@@ -64,12 +65,10 @@ jobs:
           Categories=Development;IDE;
           EOF
 
-          # Empaquetar el instalador .deb
-          dpkg-deb --build darter-deb darter_1.0.0_amd64.deb
+          dpkg-deb --build darter-deb "$PKG_NAME"
+          echo "DEB_FILE=$PKG_NAME" >> $GITHUB_ENV
 
-      - name: Subir instalador .deb como Artefacto
-        uses: actions/upload-artifact@v4
+      - name: Publicar instalador en GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: Darter-Linux-Installer-DEB
-          path: darter_1.0.0_amd64.deb
-
+          files: ${{ env.DEB_FILE }}

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:path/path.dart' as p;
@@ -51,6 +52,14 @@ class DiffView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = s.theme;
+    if (Platform.isLinux) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text('La vista de diferencias usa WebView, que aún no está disponible en Linux.\nUsa «git diff» en la terminal.', textAlign: TextAlign.center, style: TextStyle(color: t.muted)),
+        ),
+      );
+    }
     final bg = _hex(t.bg);
     final base = s.monacoBase;
     return InAppWebView(

@@ -40,34 +40,50 @@ const SNIP=[
 require.config({paths:{vs:'https://cdn.jsdelivr.net/npm/monaco-editor@__V__/min/vs'}});
 require(['vs/editor/editor.main'],()=>{
   window.models={};
+  const callF=(...a)=>{window.flushNow();return call(...a);};
+  const flushChange=(m)=>{
+    if(!m||!m.__pending)return;
+    clearTimeout(m.__s);m.__pending=false;m.__dirtySent=false;
+    call('changed',m.__path,m.getValue());
+  };
+  const queueChange=(m)=>{
+    if(!m.__dirtySent){m.__dirtySent=true;call('dirty',m.__path);}
+    m.__pending=true;clearTimeout(m.__s);
+    m.__s=setTimeout(()=>flushChange(m),250);
+  };
+  window.flushNow=()=>{flushChange(ed.getModel());};
   window.ed=monaco.editor.create(document.getElementById('c'),{theme:'vs-dark',automaticLayout:true,fontSize:14,
-    minimap:{enabled:true},bracketPairColorization:{enabled:true},smoothScrolling:true,scrollBeyondLastLine:false,
+    minimap:{enabled:true},bracketPairColorization:{enabled:true},smoothScrolling:false,accessibilitySupport:'off',quickSuggestionsDelay:120,scrollBeyondLastLine:false,
     glyphMargin:true,fixedOverflowWidgets:true,quickSuggestions:{other:true,comments:false,strings:true},model:null});
   monaco.languages.registerCompletionItemProvider('dart',{triggerCharacters:['.','(',':'],
-    provideCompletionItems:async(m,pos)=>{
+    provideCompletionItems:async(m,pos,ctx,token)=>{
+      flushChange(m);
       const r=await call('lspCompletion',m.__path,pos.lineNumber-1,pos.column-1);
+      if(token&&token.isCancellationRequested)return {suggestions:[]};
       const w=m.getWordUntilPosition(pos);
       const range={startLineNumber:pos.lineNumber,endLineNumber:pos.lineNumber,startColumn:w.startColumn,endColumn:w.endColumn};
       const sn=SNIP.map(s=>({label:s[0],detail:s[1],kind:monaco.languages.CompletionItemKind.Snippet,insertText:s[2],insertTextRules:monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,sortText:'0'+s[0],range}));
       return {suggestions:[...sn,...(r||[]).map(i=>({label:i.label,kind:KIND[i.kind]??18,insertText:i.insertText,detail:i.detail,sortText:i.sort,range}))]};
     }});
   monaco.languages.registerHoverProvider('dart',{provideHover:async(m,pos)=>{
-    const t=await call('lspHover',m.__path,pos.lineNumber-1,pos.column-1);
+    flushChange(m);const t=await call('lspHover',m.__path,pos.lineNumber-1,pos.column-1);
     return t?{contents:[{value:t}]}:null;}});
-  const goDef=()=>{const pos=ed.getPosition(),m=ed.getModel();if(m&&pos)call('lspDefinition',m.__path,pos.lineNumber-1,pos.column-1);};
+  const goDef=()=>{const pos=ed.getPosition(),m=ed.getModel();if(m&&pos){flushChange(m);call('lspDefinition',m.__path,pos.lineNumber-1,pos.column-1);}};
   ed.addCommand(monaco.KeyCode.F12,goDef);
   ed.onMouseDown(e=>{if((e.event.ctrlKey||e.event.metaKey)&&e.event.leftButton&&e.target.position){ed.setPosition(e.target.position);goDef();}});
-  ed.addCommand(monaco.KeyMod.Alt|monaco.KeyMod.Shift|monaco.KeyCode.KeyF,()=>call('format'));
+  ed.addCommand(monaco.KeyMod.Alt|monaco.KeyMod.Shift|monaco.KeyCode.KeyF,()=>callF('format'));
   const selRange=()=>{const s=ed.getSelection();return [s.startLineNumber-1,s.startColumn-1,s.endLineNumber-1,s.endColumn-1];};
-  ed.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyCode.Period,()=>{const m=ed.getModel();if(m)call('codeActions',m.__path,...selRange());});
-  ed.addCommand(monaco.KeyCode.F2,()=>{const m=ed.getModel(),pos=ed.getPosition();if(!m||!pos)return;const w=m.getWordAtPosition(pos);call('rename',m.__path,pos.lineNumber-1,pos.column-1,w?w.word:'');});
-  ed.addCommand(monaco.KeyMod.Shift|monaco.KeyCode.F12,()=>{const m=ed.getModel(),pos=ed.getPosition();if(m&&pos)call('references',m.__path,pos.lineNumber-1,pos.column-1);});
-  ed.addCommand(monaco.KeyMod.Alt|monaco.KeyMod.Shift|monaco.KeyCode.KeyO,()=>call('organizeImports'));
-  ed.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyMod.Shift|monaco.KeyCode.KeyO,()=>call('symbols'));
+  ed.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyCode.Period,()=>{const m=ed.getModel();if(m)callF('codeActions',m.__path,...selRange());});
+  ed.addCommand(monaco.KeyCode.F2,()=>{const m=ed.getModel(),pos=ed.getPosition();if(!m||!pos)return;const w=m.getWordAtPosition(pos);callF('rename',m.__path,pos.lineNumber-1,pos.column-1,w?w.word:'');});
+  ed.addCommand(monaco.KeyMod.Shift|monaco.KeyCode.F12,()=>{const m=ed.getModel(),pos=ed.getPosition();if(m&&pos)callF('references',m.__path,pos.lineNumber-1,pos.column-1);});
+  ed.addCommand(monaco.KeyMod.Alt|monaco.KeyMod.Shift|monaco.KeyCode.KeyO,()=>callF('organizeImports'));
+  ed.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyMod.Shift|monaco.KeyCode.KeyO,()=>callF('symbols'));
   const bpIds={};let dbg={m:null,ids:[]};
   const conflictIds={};
   const markConflicts=(m)=>{
-    const p=m.__path,lines=m.getLinesContent(),decos=[];let st=0,start=0;
+    const p=m.__path;
+    if(!(conflictIds[p]&&conflictIds[p].length)&&m.findMatches('<<<<<<<',false,false,true,null,false,1).length===0)return;
+    const lines=m.getLinesContent(),decos=[];let st=0,start=0;
     const mk=(a,b,c)=>({range:new monaco.Range(a,1,b,1),options:{isWholeLine:true,className:c}});
     lines.forEach((t,i)=>{const ln=i+1;
       if(st===0){if(/^<<<<<<<(\s|$)/.test(t)){st=1;start=ln+1;decos.push(mk(ln,ln,'cf-mark'));}}
@@ -88,7 +104,7 @@ require(['vs/editor/editor.main'],()=>{
   ed.addCommand(monaco.KeyMod.Shift|monaco.KeyCode.F11,()=>call('dbg','out'));
   ed.addCommand(monaco.KeyMod.Shift|monaco.KeyCode.F5,()=>call('dbg','stop'));
   ed.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyMod.Shift|monaco.KeyCode.KeyT,()=>call('dbg','gotest'));
-  const lensCmd=ed.addCommand(0,(acc,kind,path,name)=>call('lens',kind,path,name||''));
+  const lensCmd=ed.addCommand(0,(acc,kind,path,name)=>callF('lens',kind,path,name||''));
   monaco.languages.registerCodeLensProvider('dart',{
     provideCodeLenses:(m)=>{
       const lenses=[];
@@ -107,6 +123,7 @@ require(['vs/editor/editor.main'],()=>{
   });
   monaco.languages.registerCodeLensProvider('*',{
     provideCodeLenses:(m)=>{
+      if(m.findMatches('<<<<<<<',false,false,true,null,false,1).length===0)return {lenses:[],dispose:()=>{}};
       const lenses=[];
       m.getLinesContent().forEach((t,i)=>{
         if(/^<<<<<<<(\s|$)/.test(t)){
@@ -121,10 +138,10 @@ require(['vs/editor/editor.main'],()=>{
     },
     resolveCodeLens:(m,l)=>l
   });
-  ed.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyCode.KeyS,()=>call('save'));
+  ed.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyCode.KeyS,()=>{window.flushNow();call('save');});
   window.openDoc=(p,t,l)=>{let m=models[p];
     if(!m){m=models[p]=monaco.editor.createModel(t,l,monaco.Uri.file(p));m.__path=p;m.updateOptions({tabSize:2,insertSpaces:true});
-      m.onDidChangeContent(()=>{if(!suppress)call('changed',p,m.getValue());clearTimeout(m.__c);m.__c=setTimeout(()=>markConflicts(m),300);clearTimeout(m.__t);m.__t=setTimeout(()=>{const ids=bpIds[p];if(ids&&ids.length)call('bpsChanged',p,ids.map(id=>{const r=m.getDecorationRange(id);return r?r.startLineNumber:0;}).filter(x=>x>0));},400);});}
+      m.onDidChangeContent(()=>{if(!suppress)queueChange(m);clearTimeout(m.__c);m.__c=setTimeout(()=>markConflicts(m),300);clearTimeout(m.__t);m.__t=setTimeout(()=>{const ids=bpIds[p];if(ids&&ids.length)call('bpsChanged',p,ids.map(id=>{const r=m.getDecorationRange(id);return r?r.startLineNumber:0;}).filter(x=>x>0));},400);});}
     ed.setModel(m);markConflicts(m);};
   window.closeDoc=p=>{const m=models[p];if(!m)return;if(ed.getModel()===m)ed.setModel(null);m.dispose();delete models[p];};
   window.setText=(p,t)=>{const m=models[p];if(!m)return;suppress=true;m.setValue(t);suppress=false;};
@@ -307,9 +324,15 @@ class _EditorAreaState extends State<EditorArea> {
     s.onDocClosed = (path) {
       if (_shown != null && norm(_shown!) == norm(path)) _shown = null;
       if (_ready) _js('closeDoc(${jsonEncode(path)})');
+      _plainCtl.remove(path)?.dispose();
     };
     s.onExternalChange = (path, text) {
-      if (_ready) _js('setText(${jsonEncode(path)},${jsonEncode(text)})');
+      if (!_useWeb) {
+        final c = _plainCtl[path];
+        if (c != null && c.text != text) c.text = text;
+      } else if (_ready) {
+        _js('setText(${jsonEncode(path)},${jsonEncode(text)})');
+      }
     };
   }
 
@@ -317,6 +340,9 @@ class _EditorAreaState extends State<EditorArea> {
   void dispose() {
     s.removeListener(_sync);
     s.onMarkers = s.onDocClosed = s.onExternalChange = s.onBreakpoints = s.onDebugLine = null;
+    for (final c in _plainCtl.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -359,7 +385,7 @@ class _EditorAreaState extends State<EditorArea> {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-        listenable: s,
+        listenable: Listenable.merge([s, s.dirtyRev]),
         builder: (_, __) {
           final t = s.theme;
           return Column(children: [
@@ -400,10 +426,40 @@ class _EditorAreaState extends State<EditorArea> {
               ),
             Expanded(
               child: Stack(children: [
-                InAppWebView(
+                _editorSurface(t),
+                if (s.current?.isImage == true)
+                  Positioned.fill(
+                    child: Container(
+                      color: t.bg,
+                      child: InteractiveViewer(maxScale: 8, child: Center(child: Image.file(File(s.current!.path), errorBuilder: (_, __, ___) => const Text('No se puede mostrar la imagen')))),
+                    ),
+                  ),
+                if (s.docs.isEmpty) Positioned.fill(child: _welcome(context, t)),
+              ]),
+            ),
+          ]);
+        },
+      );
+
+  Widget? _wv;
+  int _wvRev = -1;
+  final _plainCtl = <String, TextEditingController>{};
+
+  bool get _useWeb => !Platform.isLinux;
+
+  /// El WebView se crea una sola vez (y solo se recrea si cambia Monaco): evita trabajo extra en cada redibujado.
+  Widget _editorSurface(t) {
+    if (!_useWeb) return _plainEditor(t);
+    if (_wv == null || _wvRev != s.monacoRev) {
+      _wvRev = s.monacoRev;
+      _wv = Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerUp: (_) => _js('window.ed&&window.ed.focus()'),
+        child: InAppWebView(
                   key: ValueKey(s.monacoRev),
                   initialData: s.monacoBase == null ? InAppWebViewInitialData(data: _page(_hex(t.bg), null), baseUrl: WebUri('https://localhost/')) : null,
                   initialUrlRequest: s.monacoBase == null ? null : URLRequest(url: WebUri('${s.monacoBase}/editor.html?bg=${Uri.encodeComponent(_hex(t.bg))}')),
+                  onPermissionRequest: (c, req) async => PermissionResponse(resources: req.resources, action: PermissionResponseAction.GRANT),
                   onWebViewCreated: (c) {
                     _c = c;
                     c.addJavaScriptHandler(handlerName: 'ready', callback: (_) {
@@ -413,6 +469,7 @@ class _EditorAreaState extends State<EditorArea> {
                     c.addJavaScriptHandler(handlerName: 'save', callback: (_) => s.save());
                     c.addJavaScriptHandler(handlerName: 'format', callback: (_) => s.formatCurrent());
                     c.addJavaScriptHandler(handlerName: 'changed', callback: (a) => s.onEdit(a[0], a[1]));
+                    c.addJavaScriptHandler(handlerName: 'dirty', callback: (a) => s.markDirty('${a[0]}'));
                     c.addJavaScriptHandler(handlerName: 'lspCompletion', callback: (a) => s.lspCompletion(a[0], (a[1] as num).toInt(), (a[2] as num).toInt()));
                     c.addJavaScriptHandler(handlerName: 'lspHover', callback: (a) => s.lspHover(a[0], (a[1] as num).toInt(), (a[2] as num).toInt()));
                     c.addJavaScriptHandler(handlerName: 'lspDefinition', callback: (a) => s.lspDefinition(a[0], (a[1] as num).toInt(), (a[2] as num).toInt()));
@@ -427,19 +484,31 @@ class _EditorAreaState extends State<EditorArea> {
                     c.addJavaScriptHandler(handlerName: 'lens', callback: (a) => s.lens('${a[0]}', a[1] as String, '${a[2]}'));
                   },
                 ),
-                if (s.current?.isImage == true)
-                  Positioned.fill(
-                    child: Container(
-                      color: t.bg,
-                      child: InteractiveViewer(maxScale: 8, child: Center(child: Image.file(File(s.current!.path), errorBuilder: (_, __, ___) => const Text('No se puede mostrar la imagen')))),
-                    ),
-                  ),
-                if (s.docs.isEmpty) Positioned.fill(child: _welcome(context, t)),
-              ]),
-            ),
-          ]);
-        },
       );
+    }
+    return _wv!;
+  }
+
+  /// Editor de respaldo (Linux): sin resaltado, pero funcional, mientras el WebView no esté disponible.
+  Widget _plainEditor(t) {
+    final d = s.current;
+    if (d == null || d.isImage) return const SizedBox.shrink();
+    final c = _plainCtl.putIfAbsent(d.path, () => TextEditingController(text: d.content));
+    return Container(
+      color: t.bg,
+      child: TextField(
+        key: ValueKey(d.path),
+        controller: c,
+        expands: true,
+        maxLines: null,
+        minLines: null,
+        textAlignVertical: TextAlignVertical.top,
+        style: TextStyle(fontFamily: 'monospace', fontSize: s.fontSize, color: t.text, height: 1.35),
+        decoration: const InputDecoration(border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none, filled: false, contentPadding: EdgeInsets.all(12)),
+        onChanged: (v) => s.onEdit(d.path, v),
+      ),
+    );
+  }
 
   Widget _welcome(BuildContext context, t) => Container(
         color: t.bg,

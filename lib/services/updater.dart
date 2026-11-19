@@ -4,7 +4,6 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
-
 import '../app_info.dart';
 
 const _headers = {'Accept': 'application/vnd.github+json', 'User-Agent': 'Darter-Updater', 'X-GitHub-Api-Version': '2022-11-28'};

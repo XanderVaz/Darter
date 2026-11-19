@@ -1,5 +1,8 @@
 # Publica una versión automáticamente cuando subes una etiqueta  vX.Y.Z
 # Uso:   git tag v1.0.1  &&  git push origin v1.0.1
+#
+# Compila Windows y Linux en servidores de GitHub (no necesitas tener Linux) y publica ambos en la release.
+# FIRMA DIGITAL (opcional): define la variable de GitHub  SIGNING_PROVIDER = azure  (ver distribution/signing/SIGNING.md).
 name: Release
 
 on:
@@ -8,10 +11,16 @@ on:
 
 permissions:
   contents: write
+  id-token: write   # necesario para iniciar sesión en Azure con OIDC (firma)
+
+env:
+  APP_EXE: darter.exe   # nombre del .exe de Windows que genera tu proyecto
 
 jobs:
+  # ───────────────────────── WINDOWS ─────────────────────────
   windows:
     runs-on: windows-latest
+    environment: release
     steps:
       - uses: actions/checkout@v4
 
@@ -33,6 +42,37 @@ jobs:
         shell: pwsh
         run: flutter build windows --release --dart-define=APP_VERSION=$env:VERSION --dart-define=APP_BUILD=${{ github.run_number }}
 
+      - name: Login en Azure (OIDC)
+        if: ${{ vars.SIGNING_PROVIDER == 'azure' }}
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Firmar ejecutable (Azure Artifact Signing)
+        if: ${{ vars.SIGNING_PROVIDER == 'azure' }}
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\build\windows\x64\runner\Release
+          files-folder-filter: ${{ env.APP_EXE }}
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      # Otros proveedores (SSL.com eSigner, etc.): agrega aquí los pasos de su documentación.
+
+      - name: Verificar firma del ejecutable
+        if: ${{ vars.SIGNING_PROVIDER != '' }}
+        shell: pwsh
+        run: |
+          $s = Get-AuthenticodeSignature "build\windows\x64\runner\Release\$env:APP_EXE"
+          $s | Format-List Status, StatusMessage, SignerCertificate
+          if ($s.Status -ne 'Valid') { throw "La firma del ejecutable no es válida: $($s.Status)" }
+
       - name: Empaquetar .zip (portátil y usado por el actualizador)
         shell: pwsh
         run: |
@@ -44,6 +84,82 @@ jobs:
         run: |
           choco install innosetup -y --no-progress
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:VERSION" distribution\darter_installer.iss
+
+      - name: Firmar instalador (Azure Artifact Signing)
+        if: ${{ vars.SIGNING_PROVIDER == 'azure' }}
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\dist
+          files-folder-filter: '*-setup.exe'
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Verificar firma del instalador
+        if: ${{ vars.SIGNING_PROVIDER != '' }}
+        shell: pwsh
+        run: |
+          Get-ChildItem dist\*-setup.exe | ForEach-Object {
+            $s = Get-AuthenticodeSignature $_.FullName
+            "$($_.Name): $($s.Status)"
+            if ($s.Status -ne 'Valid') { throw "La firma del instalador no es válida: $($s.Status)" }
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-windows
+          path: dist/*
+
+  # ───────────────────────── LINUX ─────────────────────────
+  linux:
+    runs-on: ubuntu-latest
+    continue-on-error: true   # si Linux falla, Windows se publica igual
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Dependencias de compilación para Linux
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+
+      - name: Calcular versión desde la etiqueta
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - run: flutter config --enable-linux-desktop
+      - run: flutter pub get
+
+      - name: Compilar (release)
+        run: flutter build linux --release --dart-define=APP_VERSION=$VERSION --dart-define=APP_BUILD=${{ github.run_number }}
+
+      - name: Empaquetar .tar.gz
+        run: |
+          mkdir -p dist
+          tar -C build/linux/x64/release/bundle -czf "dist/Darter-$VERSION-linux-x64.tar.gz" .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-linux
+          path: dist/*
+
+  # ───────────────────────── PUBLICAR ─────────────────────────
+  publish:
+    needs: [windows, linux]
+    if: ${{ !cancelled() && needs.windows.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
 
       - name: Publicar en GitHub Releases
         uses: softprops/action-gh-release@v2

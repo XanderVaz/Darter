@@ -17,17 +17,7 @@ class Explorer extends StatelessWidget {
     if (s.root == null) return _empty(t);
     final rows = <Widget>[];
     void walk(String dir, int depth) {
-      List<FileSystemEntity> items;
-      try {
-        items = Directory(dir).listSync()
-          ..sort((a, b) {
-            final ad = a is Directory, bd = b is Directory;
-            if (ad != bd) return ad ? -1 : 1;
-            return p.basename(a.path).toLowerCase().compareTo(p.basename(b.path).toLowerCase());
-          });
-      } catch (_) {
-        return;
-      }
+      final items = s.listDir(dir);
       for (final e in items) {
         final name = p.basename(e.path);
         if (kHidden.contains(name)) continue;

@@ -389,6 +389,8 @@ class _IdeShellState extends State<IdeShell> {
     );
   }
 
+  final _panelCache = <int, Widget>{};
+
   Widget _sidebar() {
     final panels = <Widget Function()>[
       () => Explorer(s, onNewProject: _newProject, onOpen: () => pickAndOpenFolder(s)),
@@ -402,7 +404,7 @@ class _IdeShellState extends State<IdeShell> {
     ];
     return Stack(fit: StackFit.expand, children: [
       for (var i = 0; i < panels.length; i++)
-        if (_visited.contains(i)) Offstage(offstage: side != i, child: panels[i]()),
+        if (_visited.contains(i)) Offstage(offstage: side != i, child: side == i ? (_panelCache[i] = panels[i]()) : (_panelCache[i] ?? panels[i]())),
     ]);
   }
 
