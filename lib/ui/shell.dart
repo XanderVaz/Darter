@@ -23,6 +23,7 @@ import 'outline_panel.dart';
 import 'run_config.dart';
 import 'search_panel.dart';
 import 'settings_dialog.dart';
+import 'snippets_dialog.dart';
 import 'test_panel.dart';
 
 class IdeShell extends StatefulWidget {
@@ -147,6 +148,11 @@ class _IdeShellState extends State<IdeShell> {
         PaletteCmd('Acerca de $kAppName', Icons.info_outline, () => showAboutDarter(context, s)),
         PaletteCmd('Buscar actualizaciones…', Icons.system_update_alt, () => showUpdateDialog(context, s)),
         PaletteCmd('Atajos de teclado', Icons.keyboard_outlined, () => showShortcuts(context, s)),
+        PaletteCmd('Gestionar snippets propios…', Icons.bolt, () => showSnippetsManager(context, s)),
+        PaletteCmd('Ver registro de errores', Icons.bug_report_outlined, () => showErrorLog(context, s)),
+        PaletteCmd('Zoom del editor: aumentar', Icons.zoom_in, () => s.zoom(1), hint: 'Ctrl+='),
+        PaletteCmd('Zoom del editor: reducir', Icons.zoom_out, () => s.zoom(-1), hint: 'Ctrl+-'),
+        PaletteCmd('Zoom del editor: restablecer', Icons.zoom_out_map, () => s.zoom(0), hint: 'Ctrl+0'),
         PaletteCmd('Flutter clean', Icons.cleaning_services_outlined, s.clean),
         PaletteCmd('Flutter doctor', Icons.medical_services_outlined, s.doctor),
         PaletteCmd('Ir a test / implementación', Icons.swap_horiz, s.toggleTestFile, hint: 'Ctrl+Shift+T'),
@@ -269,12 +275,14 @@ class _IdeShellState extends State<IdeShell> {
             const PopupMenuItem(value: 'keys', child: Text('Atajos de teclado')),
             PopupMenuItem(value: 'notes', enabled: kRepoConfigured, child: const Text('Notas de la versión (GitHub)')),
             PopupMenuItem(value: 'issue', enabled: kRepoConfigured, child: const Text('Reportar un problema')),
+            const PopupMenuItem(value: 'log', child: Text('Ver registro de errores')),
           ], (v) {
             if (v == 'about') showAboutDarter(context, s);
             if (v == 'update') showUpdateDialog(context, s);
             if (v == 'keys') showShortcuts(context, s);
             if (v == 'notes') s.openUrl('$kRepoUrl/releases/tag/v$kAppVersion');
             if (v == 'issue') s.openUrl(issueUrl());
+            if (v == 'log') showErrorLog(context, s);
           }),
           Expanded(
             child: Center(

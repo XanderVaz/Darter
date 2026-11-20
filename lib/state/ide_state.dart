@@ -113,6 +113,9 @@ class IdeState extends ChangeNotifier {
   String? devToolsUrl;
   double fontSize = 14;
   bool minimap = true, wordWrap = false, autoSave = false, formatOnSave = false, autoPubGet = true;
+  String fontFamily = '';
+  bool fontLigatures = false;
+  int tabSize = 2;
   int settingsRev = 0, saveRev = 0;
   Timer? _autoTimer;
   final dirtyRev = ValueNotifier<int>(0);
@@ -245,6 +248,10 @@ class IdeState extends ChangeNotifier {
     betaChannel = _prefs!.getBool('betaChannel') ?? false;
     skippedVersion = _prefs!.getString('skippedVersion') ?? '';
     lastUpdateCheck = _prefs!.getInt('lastUpdateCheck') ?? 0;
+    fontFamily = _prefs!.getString('fontFamily') ?? '';
+    fontLigatures = _prefs!.getBool('fontLigatures') ?? false;
+    tabSize = _prefs!.getInt('tabSize') ?? 2;
+    _loadSnippets();
     final r = _prefs!.getString('root');
     if (r != null && Directory(r).existsSync()) await openProject(r, restoreTabs: true);
     if (terminals.isEmpty) addTerminal();
@@ -506,6 +513,7 @@ class IdeState extends ChangeNotifier {
     }
     if (_isDart(d.path)) _lsp?.save(d.path);
     saveRev++;
+    refreshGutter(d.path);
     notifyListeners();
     if (isRunning && _isDart(d.path)) hotReload();
     if (autoPubGet && p.basename(d.path) == 'pubspec.yaml' && root != null) pubGet();
@@ -692,6 +700,9 @@ class IdeState extends ChangeNotifier {
     if (sig != _gitSig) {
       _gitSig = sig;
       notifyListeners();
+      for (final d in docs.take(12)) {
+        refreshGutter(d.path);
+      }
     }
   }
 
@@ -837,9 +848,15 @@ class IdeState extends ChangeNotifier {
   }
 
   // ---------- Ajustes / ejecución / tareas ----------
-  void updateSettings({double? font, bool? mm, bool? wrap, bool? auto, bool? fmt, bool? pubget}) {
+  void updateSettings({double? font, bool? mm, bool? wrap, bool? auto, bool? fmt, bool? pubget, String? family, bool? lig, int? tab}) {
     autoPubGet = pubget ?? autoPubGet;
     _prefs?.setBool('autoPubGet', autoPubGet);
+    fontFamily = family ?? fontFamily;
+    fontLigatures = lig ?? fontLigatures;
+    tabSize = tab ?? tabSize;
+    _prefs?.setString('fontFamily', fontFamily);
+    _prefs?.setBool('fontLigatures', fontLigatures);
+    _prefs?.setInt('tabSize', tabSize);
     fontSize = font ?? fontSize;
     minimap = mm ?? minimap;
     wordWrap = wrap ?? wordWrap;
@@ -2046,6 +2063,182 @@ class IdeState extends ChangeNotifier {
     _prefs?.setString('skippedVersion', r.version);
     updateAvailable = null;
     notifyListeners();
+  }
+
+  // ---------- Archivos: copiar / pegar / mover / duplicar ----------
+  String? _fileClip;
+  bool _clipCut = false;
+  bool get hasFileClip => _fileClip != null;
+
+  void clipFile(String path, {bool cut = false}) {
+    _fileClip = path;
+    _clipCut = cut;
+    info('${cut ? 'Cortado' : 'Copiado'}: ${p.basename(path)}');
+  }
+
+  String _uniquePath(String dir, String name) {
+    var cand = p.join(dir, name);
+    if (FileSystemEntity.typeSync(cand) == FileSystemEntityType.notFound) return cand;
+    final ext = p.extension(name);
+    final base = p.basenameWithoutExtension(name);
+    var i = 1;
+    do {
+      cand = p.join(dir, '$base copia${i > 1 ? ' $i' : ''}$ext');
+      i++;
+    } while (FileSystemEntity.typeSync(cand) != FileSystemEntityType.notFound);
+    return cand;
+  }
+
+  Future<void> _copyEntity(String src, String dst) async {
+    if (await FileSystemEntity.isDirectory(src)) {
+      await Directory(dst).create(recursive: true);
+      await for (final e in Directory(src).list(followLinks: false)) {
+        await _copyEntity(e.path, p.join(dst, p.basename(e.path)));
+      }
+    } else {
+      await File(src).copy(dst);
+    }
+  }
+
+  Future<void> pasteInto(String dir) async {
+    final src = _fileClip;
+    if (src == null) return;
+    try {
+      if (_clipCut) {
+        await moveEntity(src, dir);
+        _fileClip = null;
+      } else {
+        await _copyEntity(src, _uniquePath(dir, p.basename(src)));
+        expanded.add(dir);
+        fsRev++;
+        notifyListeners();
+      }
+    } catch (e) {
+      _add('Error al pegar: $e');
+    }
+  }
+
+  Future<void> duplicate(String path) async {
+    try {
+      final dst = _uniquePath(p.dirname(path), p.basename(path));
+      await _copyEntity(path, dst);
+      fsRev++;
+      notifyListeners();
+      if (File(dst).existsSync()) openFile(dst);
+    } catch (e) {
+      _add('Error al duplicar: $e');
+    }
+  }
+
+  Future<void> moveEntity(String src, String destDir) async {
+    try {
+      final dst = p.join(destDir, p.basename(src));
+      if (norm(dst) == norm(src)) return;
+      if (norm(destDir) == norm(src) || p.isWithin(src, destDir)) {
+        info('No se puede mover una carpeta dentro de sí misma');
+        return;
+      }
+      if (FileSystemEntity.typeSync(dst) != FileSystemEntityType.notFound) {
+        info('Ya existe "${p.basename(src)}" en la carpeta de destino');
+        return;
+      }
+      final isDir = await FileSystemEntity.isDirectory(src);
+      final affected = _under(src).map((d) => d.path).toList();
+      for (final a in affected) {
+        closeDoc(docs.indexOf(_doc(a)!));
+      }
+      if (isDir) {
+        await Directory(src).rename(dst);
+      } else {
+        await File(src).rename(dst);
+      }
+      for (final a in affected) {
+        final rel = p.relative(a, from: src);
+        openFile(rel == '.' ? dst : p.join(dst, rel));
+      }
+      expanded.add(destDir);
+      fsRev++;
+      notifyListeners();
+    } catch (e) {
+      _add('Error al mover: $e');
+    }
+  }
+
+  Future<void> revealPath(String path) async {
+    try {
+      if (Platform.isWindows) {
+        await Process.run('explorer', ['/select,$path']);
+      } else if (Platform.isMacOS) {
+        await Process.run('open', ['-R', path]);
+      } else {
+        await Process.run('xdg-open', [FileSystemEntity.isDirectorySync(path) ? path : p.dirname(path)]);
+      }
+    } catch (e) {
+      _add('No se pudo abrir el explorador: $e');
+    }
+  }
+
+  void openTerminalAt(String dir) {
+    final t = addTerminal();
+    t.cwd = dir;
+    notifyListeners();
+  }
+
+  // ---------- Gutter de Git: líneas añadidas / modificadas / eliminadas ----------
+  void Function(String path, List<List<int>> ranges)? onGutter;
+
+  Future<void> refreshGutter(String path) async {
+    final d = _doc(path);
+    if (d == null || d.isImage || root == null) return;
+    if (!gitRepo) {
+      onGutter?.call(d.path, const []);
+      return;
+    }
+    final out = <List<int>>[];
+    final untracked = gitChanges.any((c) => c.untracked && norm(p.join(root!, c.path)) == norm(d.path));
+    if (untracked) {
+      out.add([1, '\n'.allMatches(d.content).length + 1, 0]);
+    } else {
+      final r = await _git(['diff', 'HEAD', '-U0', '--no-color', '--', _rel(d.path)]);
+      if (r != null && r.exitCode == 0) {
+        final re = RegExp(r'^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@', multiLine: true);
+        for (final m in re.allMatches('${r.stdout}')) {
+          final oldLen = m.group(2) == null ? 1 : int.parse(m.group(2)!);
+          final ns = int.parse(m.group(3)!);
+          final newLen = m.group(4) == null ? 1 : int.parse(m.group(4)!);
+          if (newLen == 0) {
+            out.add([math.max(1, ns), math.max(1, ns), 2]);
+          } else if (oldLen == 0) {
+            out.add([ns, ns + newLen - 1, 0]);
+          } else {
+            out.add([ns, ns + newLen - 1, 1]);
+          }
+        }
+      }
+    }
+    onGutter?.call(d.path, out);
+  }
+
+  // ---------- Snippets propios y zoom ----------
+  List<Map<String, String>> userSnippets = [];
+
+  void _loadSnippets() {
+    try {
+      final j = _prefs?.getString('userSnippets');
+      if (j != null) userSnippets = [for (final e in (jsonDecode(j) as List)) Map<String, String>.from(e as Map)];
+    } catch (_) {}
+  }
+
+  void saveSnippets(List<Map<String, String>> list) {
+    userSnippets = list;
+    _prefs?.setString('userSnippets', jsonEncode(list));
+    settingsRev++;
+    notifyListeners();
+  }
+
+  void zoom(int dir) {
+    final f = dir == 0 ? 14.0 : (fontSize + dir).clamp(8.0, 40.0).toDouble();
+    updateSettings(font: f);
   }
 
   // ---------- Atajos ----------

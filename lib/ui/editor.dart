@@ -13,7 +13,7 @@ import 'create_project.dart';
 
 const _monacoVersion = '0.52.0';
 const _htmlTpl = r'''
-<html><head><style>.bp-glyph{background:#e51400;border-radius:50%;width:10px!important;height:10px!important;margin:5px 0 0 5px}.dbg-arrow{background:#ffcc00;width:10px!important;height:10px!important;margin:5px 0 0 5px;clip-path:polygon(0 0,100% 50%,0 100%)}.dbg-line{background:rgba(255,204,0,.22)}.cf-mark{background:rgba(128,128,128,.28)}.cf-cur{background:rgba(64,200,174,.20)}.cf-inc{background:rgba(64,166,255,.20)}</style></head><body style="margin:0;background:__BG__"><div id="c" style="height:100vh"></div>
+<html><head><style>.bp-glyph{background:#e51400;border-radius:50%;width:10px!important;height:10px!important;margin:5px 0 0 5px}.dbg-arrow{background:#ffcc00;width:10px!important;height:10px!important;margin:5px 0 0 5px;clip-path:polygon(0 0,100% 50%,0 100%)}.dbg-line{background:rgba(255,204,0,.22)}.cf-mark{background:rgba(128,128,128,.28)}.cf-cur{background:rgba(64,200,174,.20)}.cf-inc{background:rgba(64,166,255,.20)}.gt-add{border-left:3px solid #2ea043;margin-left:3px}.gt-mod{border-left:3px solid #1f6feb;margin-left:3px}.gt-del{border-left:3px solid #f85149;margin-left:3px}</style></head><body style="margin:0;background:__BG__"><div id="c" style="height:100vh"></div>
 <script src="https://cdn.jsdelivr.net/npm/monaco-editor@__V__/min/vs/loader.js"></script>
 <script>
 const call=(...a)=>window.flutter_inappwebview.callHandler(...a);
@@ -63,7 +63,8 @@ require(['vs/editor/editor.main'],()=>{
       const w=m.getWordUntilPosition(pos);
       const range={startLineNumber:pos.lineNumber,endLineNumber:pos.lineNumber,startColumn:w.startColumn,endColumn:w.endColumn};
       const sn=SNIP.map(s=>({label:s[0],detail:s[1],kind:monaco.languages.CompletionItemKind.Snippet,insertText:s[2],insertTextRules:monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,sortText:'0'+s[0],range}));
-      return {suggestions:[...sn,...(r||[]).map(i=>({label:i.label,kind:KIND[i.kind]??18,insertText:i.insertText,detail:i.detail,sortText:i.sort,range}))]};
+      const us=(window.USNIP||[]).map(u=>({label:u.prefix,detail:u.desc||'Snippet propio',kind:monaco.languages.CompletionItemKind.Snippet,insertText:u.body,insertTextRules:monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,sortText:'0'+u.prefix,range}));
+      return {suggestions:[...sn,...us,...(r||[]).map(i=>({label:i.label,kind:KIND[i.kind]??18,insertText:i.insertText,detail:i.detail,sortText:i.sort,range}))]};
     }});
   monaco.languages.registerHoverProvider('dart',{provideHover:async(m,pos)=>{
     flushChange(m);const t=await call('lspHover',m.__path,pos.lineNumber-1,pos.column-1);
@@ -80,6 +81,10 @@ require(['vs/editor/editor.main'],()=>{
   ed.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyMod.Shift|monaco.KeyCode.KeyO,()=>callF('symbols'));
   const bpIds={};let dbg={m:null,ids:[]};
   const conflictIds={};
+  const gutterIds={};
+  window.setGutter=(p,rs)=>{const m=models[p];if(!m)return;gutterIds[p]=m.deltaDecorations(gutterIds[p]||[],rs.map(r=>({range:new monaco.Range(r[0],1,r[1],1),options:{isWholeLine:true,linesDecorationsClassName:r[2]===0?'gt-add':(r[2]===1?'gt-mod':'gt-del')}})));};
+  window.USNIP=[];
+  window.setUserSnippets=(a)=>{window.USNIP=a||[];};
   const markConflicts=(m)=>{
     const p=m.__path;
     if(!(conflictIds[p]&&conflictIds[p].length)&&m.findMatches('<<<<<<<',false,false,true,null,false,1).length===0)return;
@@ -104,6 +109,9 @@ require(['vs/editor/editor.main'],()=>{
   ed.addCommand(monaco.KeyMod.Shift|monaco.KeyCode.F11,()=>call('dbg','out'));
   ed.addCommand(monaco.KeyMod.Shift|monaco.KeyCode.F5,()=>call('dbg','stop'));
   ed.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyMod.Shift|monaco.KeyCode.KeyT,()=>call('dbg','gotest'));
+  ed.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyCode.Equal,()=>call('zoom',1));
+  ed.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyCode.Minus,()=>call('zoom',-1));
+  ed.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyCode.Digit0,()=>call('zoom',0));
   const lensCmd=ed.addCommand(0,(acc,kind,path,name)=>callF('lens',kind,path,name||''));
   monaco.languages.registerCodeLensProvider('dart',{
     provideCodeLenses:(m)=>{
@@ -147,7 +155,7 @@ require(['vs/editor/editor.main'],()=>{
   window.setText=(p,t)=>{const m=models[p];if(!m)return;suppress=true;m.setValue(t);suppress=false;};
   window.setMarkers=(p,ms)=>{const m=models[p];if(m)monaco.editor.setModelMarkers(m,'dart',ms);};
   window.reveal=(l,c)=>{const pos={lineNumber:l,column:c};ed.setPosition(pos);ed.revealPositionInCenter(pos);ed.focus();};
-  window.applySettings=(fs,mm,wrap)=>ed.updateOptions({fontSize:fs,minimap:{enabled:mm},wordWrap:wrap?'on':'off'});
+  window.applySettings=(fs,mm,wrap,fam,lig,tab)=>{ed.updateOptions({fontSize:fs,minimap:{enabled:mm},wordWrap:wrap?'on':'off',fontFamily:fam?fam:'Consolas, "Courier New", monospace',fontLigatures:lig,tabSize:tab});monaco.editor.getModels().forEach(m=>m.updateOptions({tabSize:tab}));};
   window.applyTheme=(def,id)=>{monaco.editor.defineTheme(id,def);monaco.editor.setTheme(id);document.body.style.background=def.colors['editor.background'];};
   call('ready');
 });
@@ -315,6 +323,9 @@ class _EditorAreaState extends State<EditorArea> {
     s.onMarkers = (path, list) {
       if (_ready) _js('setMarkers(${jsonEncode(path)},${jsonEncode(_markers(list))})');
     };
+    s.onGutter = (path, rs) {
+      if (_ready) _js('setGutter(${jsonEncode(path)},${jsonEncode(rs)})');
+    };
     s.onBreakpoints = (path, lines) {
       if (_ready) _js('setBps(${jsonEncode(path)},${jsonEncode(lines)})');
     };
@@ -339,7 +350,7 @@ class _EditorAreaState extends State<EditorArea> {
   @override
   void dispose() {
     s.removeListener(_sync);
-    s.onMarkers = s.onDocClosed = s.onExternalChange = s.onBreakpoints = s.onDebugLine = null;
+    s.onMarkers = s.onDocClosed = s.onExternalChange = s.onBreakpoints = s.onDebugLine = s.onGutter = null;
     for (final c in _plainCtl.values) {
       c.dispose();
     }
@@ -362,7 +373,8 @@ class _EditorAreaState extends State<EditorArea> {
     }
     if (_setRev != s.settingsRev) {
       _setRev = s.settingsRev;
-      _js('applySettings(${s.fontSize},${s.minimap},${s.wordWrap})');
+      _js('applySettings(${s.fontSize},${s.minimap},${s.wordWrap},${jsonEncode(s.fontFamily)},${s.fontLigatures},${s.tabSize})');
+      _js('setUserSnippets(${jsonEncode(s.userSnippets)})');
     }
     final d = s.current;
     if (d == null || d.isImage) return;
@@ -375,6 +387,7 @@ class _EditorAreaState extends State<EditorArea> {
       if (bps != null && bps.isNotEmpty) _js('setBps(${jsonEncode(d.path)},${jsonEncode(bps.toList())})');
       final dl = s.debugLine;
       if (dl != null && norm(dl.path) == norm(d.path)) _js('setDbgLine(${jsonEncode(d.path)},${dl.line})');
+      s.refreshGutter(d.path);
     }
     final r = s.reveal;
     if (r != null && norm(r.path) == norm(d.path)) {
@@ -385,7 +398,7 @@ class _EditorAreaState extends State<EditorArea> {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-        listenable: Listenable.merge([s, s.dirtyRev]),
+        listenable: Listenable.merge([s, s.dirtyRev, s.diagRev]),
         builder: (_, __) {
           final t = s.theme;
           return Column(children: [
@@ -408,7 +421,7 @@ class _EditorAreaState extends State<EditorArea> {
                         child: Row(children: [
                           Icon(fileIcon(s.docs[i].name), size: 14, color: fileColor(s.docs[i].name, t)),
                           const SizedBox(width: 6),
-                          Text(s.docs[i].name, style: TextStyle(fontSize: 13, color: i == s.active ? t.text : t.muted)),
+                          Text(s.docs[i].name, style: TextStyle(fontSize: 13, color: (s.diags[norm(s.docs[i].path)] ?? const <Diag>[]).any((x) => x.severity == 1) ? Colors.redAccent : (i == s.active ? t.text : t.muted))),
                           const SizedBox(width: 8),
                           InkWell(onTap: () => _closeTab(i), child: Icon(s.docs[i].dirty ? Icons.circle : Icons.close, size: s.docs[i].dirty ? 10 : 14, color: t.muted)),
                         ]),
@@ -481,6 +494,7 @@ class _EditorAreaState extends State<EditorArea> {
                     c.addJavaScriptHandler(handlerName: 'toggleBp', callback: (a) => s.toggleBreakpoint(a[0], _i(a[1])));
                     c.addJavaScriptHandler(handlerName: 'bpsChanged', callback: (a) => s.bpsChangedFromEditor(a[0], [for (final x in (a[1] as List)) _i(x)]));
                     c.addJavaScriptHandler(handlerName: 'dbg', callback: (a) => s.debugKey('${a[0]}'));
+                    c.addJavaScriptHandler(handlerName: 'zoom', callback: (a) => s.zoom(_i(a[0])));
                     c.addJavaScriptHandler(handlerName: 'lens', callback: (a) => s.lens('${a[0]}', a[1] as String, '${a[2]}'));
                   },
                 ),

@@ -24,7 +24,7 @@ class Explorer extends StatelessWidget {
         final isDir = e is Directory;
         final open = s.expanded.contains(e.path);
         final selected = s.current != null && norm(s.current!.path) == norm(e.path);
-        rows.add(GestureDetector(
+        final rowW = GestureDetector(
           onSecondaryTapDown: (d) => _menu(context, d.globalPosition, e.path, isDir),
           child: InkWell(
             onTap: () => isDir ? s.toggleDir(e.path) : s.openFile(e.path),
@@ -39,7 +39,8 @@ class Explorer extends StatelessWidget {
               ]),
             ),
           ),
-        ));
+        );
+        rows.add(_dnd(e.path, isDir, name, rowW));
         if (isDir && open) walk(e.path, depth + 1);
       }
     }
@@ -55,6 +56,29 @@ class Explorer extends StatelessWidget {
       ]),
       Expanded(child: ListView(children: rows)),
     ]);
+  }
+
+  Widget _dnd(String path, bool isDir, String name, Widget child) {
+    final t = s.theme;
+    final drag = Draggable<String>(
+      data: path,
+      dragAnchorStrategy: pointerDragAnchorStrategy,
+      feedback: Material(
+        color: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(color: t.accent.withAlpha(210), borderRadius: BorderRadius.circular(6)),
+          child: Text(name, style: TextStyle(color: t.onAccent, fontSize: 12.5)),
+        ),
+      ),
+      child: child,
+    );
+    if (!isDir) return drag;
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (d) => d.data != path && !p.isWithin(d.data, path),
+      onAcceptWithDetails: (d) => s.moveEntity(d.data, path),
+      builder: (_, cand, __) => Container(color: cand.isNotEmpty ? t.accent.withAlpha(60) : null, child: drag),
+    );
   }
 
   Widget _empty(t) => ListView(padding: const EdgeInsets.all(16), children: [
@@ -99,6 +123,15 @@ class Explorer extends StatelessWidget {
         const PopupMenuItem(value: 'rename', child: Text('Renombrar…')),
         const PopupMenuItem(value: 'delete', child: Text('Eliminar')),
         const PopupMenuItem(value: 'copy', child: Text('Copiar ruta')),
+        const PopupMenuItem(value: 'copyrel', child: Text('Copiar ruta relativa')),
+        const PopupMenuDivider(),
+        const PopupMenuItem(value: 'fcopy', child: Text('Copiar')),
+        const PopupMenuItem(value: 'fcut', child: Text('Cortar')),
+        PopupMenuItem(value: 'fpaste', enabled: s.hasFileClip, child: const Text('Pegar')),
+        const PopupMenuItem(value: 'dup', child: Text('Duplicar')),
+        const PopupMenuDivider(),
+        const PopupMenuItem(value: 'reveal', child: Text('Mostrar en el explorador del sistema')),
+        const PopupMenuItem(value: 'term', child: Text('Abrir terminal aquí')),
       ],
     );
     if (v == null || !c.mounted) return;
@@ -119,6 +152,20 @@ class Explorer extends StatelessWidget {
         if (await confirm(c, s, 'Eliminar', '¿Eliminar "${p.basename(path)}"? No se puede deshacer.', ok: 'Eliminar')) s.deleteEntity(path);
       case 'copy':
         Clipboard.setData(ClipboardData(text: path));
+      case 'copyrel':
+        Clipboard.setData(ClipboardData(text: p.relative(path, from: s.root!)));
+      case 'fcopy':
+        s.clipFile(path);
+      case 'fcut':
+        s.clipFile(path, cut: true);
+      case 'fpaste':
+        await s.pasteInto(dir);
+      case 'dup':
+        await s.duplicate(path);
+      case 'reveal':
+        await s.revealPath(path);
+      case 'term':
+        s.openTerminalAt(dir);
       case 'assets':
         await s.addAssetFolder(path);
       case 'history':

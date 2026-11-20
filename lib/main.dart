@@ -1,14 +1,28 @@
+import 'dart:async';
+import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/material.dart';
+import 'services/app_log.dart';
 import 'state/ide_state.dart';
 import 'theme/ide_theme.dart';
 import 'ui/logo.dart';
 import 'ui/shell.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  final s = IdeState();
-  await s.restore(); // reabre el último proyecto y sus pestañas
-  runApp(DartIdeApp(state: s));
+  AppLog.init();
+  FlutterError.onError = (d) {
+    FlutterError.presentError(d);
+    AppLog.error(d.exception, d.stack);
+  };
+  PlatformDispatcher.instance.onError = (e, st) {
+    AppLog.error(e, st);
+    return true;
+  };
+  await runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    final s = IdeState();
+    await s.restore(); // reabre el último proyecto y sus pestañas
+    runApp(DartIdeApp(state: s));
+  }, (e, st) => AppLog.error(e, st));
 }
 
 class DartIdeApp extends StatelessWidget {

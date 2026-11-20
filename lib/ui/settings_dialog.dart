@@ -3,6 +3,9 @@ import '../services/monaco_local.dart';
 import 'about_dialog.dart';
 import '../state/ide_state.dart';
 import '../theme/ide_theme.dart';
+import 'snippets_dialog.dart';
+
+const _fonts = <String>['', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', 'Source Code Pro', 'Consolas', 'Courier New'];
 
 Future<void> showSettings(BuildContext c, IdeState s) => showDialog(context: c, builder: (_) => _SettingsDialog(s));
 
@@ -63,6 +66,32 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             ]),
             _sw('Minimapa', 'Vista en miniatura del archivo', s.minimap, (v) => s.updateSettings(mm: v)),
             _sw('Ajuste de línea', 'Divide las líneas largas', s.wordWrap, (v) => s.updateSettings(wrap: v)),
+            Row(children: [
+              const Text('Fuente'),
+              const SizedBox(width: 16),
+              Expanded(
+                child: DropdownButton<String>(
+                  isExpanded: true,
+                  value: _fonts.contains(s.fontFamily) ? s.fontFamily : '',
+                  dropdownColor: t.side,
+                  items: [for (final f in _fonts) DropdownMenuItem(value: f, child: Text(f.isEmpty ? 'Predeterminada (Consolas)' : f))],
+                  onChanged: (v) => setState(() => s.updateSettings(family: v ?? '')),
+                ),
+              ),
+            ]),
+            _sw('Ligaduras tipográficas', 'Para fuentes como Fira Code o JetBrains Mono (deben estar instaladas)', s.fontLigatures, (v) => s.updateSettings(lig: v)),
+            Row(children: [
+              const Text('Tamaño de tabulación'),
+              const Spacer(),
+              SegmentedButton<int>(
+                showSelectedIcon: false,
+                segments: const [ButtonSegment(value: 2, label: Text('2')), ButtonSegment(value: 4, label: Text('4')), ButtonSegment(value: 8, label: Text('8'))],
+                selected: {s.tabSize},
+                onSelectionChanged: (v) => setState(() => s.updateSettings(tab: v.first)),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            Align(alignment: Alignment.centerLeft, child: OutlinedButton.icon(onPressed: () => showSnippetsManager(context, s), icon: const Icon(Icons.bolt, size: 18), label: const Text('Gestionar snippets propios…'))),
             _label('GUARDADO'),
             _sw('Guardado automático', 'Guarda ~1 s después de dejar de escribir (dispara hot reload)', s.autoSave, (v) => s.updateSettings(auto: v)),
             _sw('Formatear al guardar', 'Ejecuta dart format en archivos .dart', s.formatOnSave, (v) => s.updateSettings(fmt: v)),

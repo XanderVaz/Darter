@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../app_info.dart';
+import '../services/app_log.dart';
 import '../services/monaco_local.dart';
 import '../services/updater.dart';
 import '../state/ide_state.dart';
@@ -79,7 +80,7 @@ class _AboutState extends State<_About> {
         ('Servidor de lenguaje', s.lspStatus.isEmpty ? '—' : s.lspStatus),
       ];
 
-  String get _info => '$kAppName v$kAppVersion (compilación $kBuildNumber)\n${_rows().skip(1).map((r) => '${r.$1}: ${r.$2}').join('\n')}';
+  String get _info => '$kAppName v$kAppVersion (compilación $kBuildNumber)\n${_rows().skip(1).map((r) => '${r.$1}: ${r.$2}').join('\n')}\n\n--- registro (últimas líneas) ---\n${AppLog.tail(25)}';
 
   String get _initials => kCreatorName.trim().split(RegExp(r'\s+')).take(2).map((w) => w.isEmpty ? '' : w[0].toUpperCase()).join();
 
@@ -437,6 +438,63 @@ class _Shortcuts extends StatelessWidget {
                     ]),
                   ),
               ],
+            ]),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+// ───────────────────────── Registro de errores ─────────────────────────
+Future<void> showErrorLog(BuildContext c, IdeState s) => showDialog<void>(context: c, builder: (_) => _ErrorLog(s));
+
+class _ErrorLog extends StatefulWidget {
+  const _ErrorLog(this.s);
+  final IdeState s;
+  @override
+  State<_ErrorLog> createState() => _ErrorLogState();
+}
+
+class _ErrorLogState extends State<_ErrorLog> {
+  IdeState get s => widget.s;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = s.theme;
+    final text = AppLog.tail(300);
+    return Dialog(
+      backgroundColor: t.panel,
+      surfaceTintColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: t.border)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 900, maxHeight: 600),
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 10, 8, 6),
+            child: Row(children: [
+              Icon(Icons.bug_report_outlined, color: t.accent),
+              const SizedBox(width: 10),
+              const Expanded(child: Text('Registro de errores', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700))),
+              IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
+            ]),
+          ),
+          Divider(height: 1, color: t.border),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(12),
+              child: SelectableText(text.isEmpty ? 'El registro está vacío ✓' : text, style: _mono),
+            ),
+          ),
+          Divider(height: 1, color: t.border),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 12, 8),
+            child: Row(children: [
+              Expanded(child: Text('${AppLog.path}  ·  solo se guarda en tu equipo', overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, color: t.muted))),
+              TextButton(onPressed: () { Clipboard.setData(ClipboardData(text: text)); s.info('Registro copiado'); }, child: const Text('Copiar')),
+              TextButton(onPressed: () => s.revealPath(AppLog.path), child: const Text('Abrir carpeta')),
+              TextButton(onPressed: () { AppLog.clear(); setState(() {}); }, child: const Text('Limpiar')),
             ]),
           ),
         ]),
