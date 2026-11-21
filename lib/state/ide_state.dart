@@ -11,6 +11,8 @@ import '../services/test_runner.dart';
 import '../app_info.dart';
 import '../services/lsp.dart';
 import '../services/updater.dart';
+import '../services/app_log.dart';
+import '../services/vm_service.dart';
 import '../services/merge_conflicts.dart';
 import '../services/monaco_local.dart';
 import '../theme/ide_theme.dart';
@@ -255,6 +257,7 @@ class IdeState extends ChangeNotifier {
     final r = _prefs!.getString('root');
     if (r != null && Directory(r).existsSync()) await openProject(r, restoreTabs: true);
     if (terminals.isEmpty) addTerminal();
+    _scanRecovery();
     await initMonaco();
     if (autoCheckUpdates && DateTime.now().millisecondsSinceEpoch - lastUpdateCheck > 20 * 3600 * 1000) {
       checkForUpdates(silent: true);
@@ -289,6 +292,7 @@ class IdeState extends ChangeNotifier {
     _loadRunConfig();
     _loadBps();
     _syncTerminals(dir);
+    _loadTasks();
     recents = [dir, ...recents.where((e) => e != dir)].take(8).toList();
     _prefs?.setStringList('recents', recents);
     _add('Proyecto abierto: $dir');
@@ -318,6 +322,7 @@ class IdeState extends ChangeNotifier {
     _lsp = null;
     lspStatus = '';
     for (final d in docs) {
+      _clearRecovery(d.path);
       onDocClosed?.call(d.path);
     }
     docs.clear();
@@ -453,6 +458,7 @@ class IdeState extends ChangeNotifier {
 
   void closeDoc(int i) {
     final d = docs.removeAt(i);
+    _clearRecovery(d.path);
     onDocClosed?.call(d.path);
     if (_isDart(d.path)) _lsp?.close(d.path);
     if (active >= docs.length) active = docs.length - 1;
@@ -478,6 +484,7 @@ class IdeState extends ChangeNotifier {
       d.dirty = true;
       dirtyRev.value++;
     }
+    _scheduleRecovery(d);
     if (autoSave) {
       _autoTimer?.cancel();
       _autoTimer = Timer(const Duration(milliseconds: 900), () {
@@ -502,6 +509,7 @@ class IdeState extends ChangeNotifier {
     if (d.isImage) return;
     await File(d.path).writeAsString(d.content);
     d.dirty = false;
+    _clearRecovery(d.path);
     if (formatOnSave && _isDart(d.path)) {
       try {
         final r = await Process.run('dart', ['format', d.path], runInShell: true);
@@ -528,6 +536,7 @@ class IdeState extends ChangeNotifier {
     for (final d in docs.where((d) => d.dirty)) {
       await File(d.path).writeAsString(d.content);
       d.dirty = false;
+      _clearRecovery(d.path);
     }
     notifyListeners();
   }
@@ -621,12 +630,14 @@ class IdeState extends ChangeNotifier {
     return RegExp(src, caseSensitive: cs);
   }
 
-  Future<List<SearchHit>> search(String q, {bool caseSensitive = false, bool regex = false, bool whole = false}) async {
+  Future<List<SearchHit>> search(String q, {bool caseSensitive = false, bool regex = false, bool whole = false, String include = '', String exclude = ''}) async {
     if (root == null) return [];
     final re = _re(q, caseSensitive, regex, whole);
     final out = <SearchHit>[];
     var n = 0;
+    final inc = _globs(include), exc = _globs(exclude);
     await for (final f in _files(root!)) {
+      if (!_passes(f.path, inc, exc)) continue;
       try {
         if (f.lengthSync() > 1500000) continue;
         final lines = const LineSplitter().convert(await f.readAsString());
@@ -642,11 +653,13 @@ class IdeState extends ChangeNotifier {
     return out;
   }
 
-  Future<int> replaceAll(String q, String repl, {bool caseSensitive = false, bool regex = false, bool whole = false}) async {
+  Future<int> replaceAll(String q, String repl, {bool caseSensitive = false, bool regex = false, bool whole = false, String include = '', String exclude = ''}) async {
     if (root == null) return 0;
     final re = _re(q, caseSensitive, regex, whole);
     var files = 0;
+    final inc = _globs(include), exc = _globs(exclude);
     await for (final f in _files(root!)) {
+      if (!_passes(f.path, inc, exc)) continue;
       try {
         if (f.lengthSync() > 1500000) continue;
         final src = await f.readAsString();
@@ -739,6 +752,8 @@ class IdeState extends ChangeNotifier {
   void _pipe(Process proc) {
     void onLine(String l) {
       _add(l);
+      final vmm = RegExp(r'Dart VM Service.*?available at:\s*(http\S+)').firstMatch(l);
+      if (vmm != null) vmServiceUri = vmm.group(1);
       final m = RegExp(r'DevTools.*?available at:\s*(http\S+)').firstMatch(l);
       if (m != null) {
         devToolsUrl = m.group(1);
@@ -809,6 +824,7 @@ class IdeState extends ChangeNotifier {
     proc.exitCode.then((c) {
       _running = null;
       devToolsUrl = null;
+      _vmReset();
       _add('[$_tool run terminó: $c]');
       notifyListeners();
     });
@@ -1415,6 +1431,7 @@ class IdeState extends ChangeNotifier {
         _dapCleanup(kill: true);
       case 'dart.debuggerUris':
         _add('VM Service: ${body['vmServiceUri']}');
+        vmServiceUri = '${body['vmServiceUri']}';
       case 'flutter.appStarted':
         if (!debugPaused) {
           debugStatus = 'En ejecución';
@@ -1589,6 +1606,7 @@ class IdeState extends ChangeNotifier {
     varCache.clear();
     debugLine = null;
     devToolsUrl = null;
+    _vmReset();
     onDebugLine?.call(null, 0);
     _add('[sesión de depuración terminada]');
     notifyListeners();
@@ -2045,6 +2063,7 @@ class IdeState extends ChangeNotifier {
       if (ok == false) throw 'La verificación SHA-256 falló: el archivo no coincide con el publicado. No se instaló nada.';
       updateStatus = 'Instalando…';
       notifyListeners();
+      await saveAll(); // nunca pierdas cambios al reiniciar
       final msg = await applyUpdate(f);
       if (msg != null) updateStatus = msg;
     } catch (e) {
@@ -2239,6 +2258,211 @@ class IdeState extends ChangeNotifier {
   void zoom(int dir) {
     final f = dir == 0 ? 14.0 : (fontSize + dir).clamp(8.0, 40.0).toDouble();
     updateSettings(font: f);
+  }
+
+  // ---------- Recuperación de cambios sin guardar ----------
+  Timer? _recTimer;
+  List<({String path, String content})> recoverable = [];
+
+  String _recDir() => p.join(p.dirname(AppLog.dirPath()), 'recovery');
+
+  int _fnv(String s) {
+    var h = 0x811c9dc5;
+    for (final c in s.codeUnits) {
+      h ^= c;
+      h = (h * 0x01000193) & 0xFFFFFFFF;
+    }
+    return h;
+  }
+
+  File _recFile(String path) => File(p.join(_recDir(), '${_fnv(norm(path)).toRadixString(16)}.json'));
+
+  void _scheduleRecovery(OpenDoc d) {
+    _recTimer?.cancel();
+    _recTimer = Timer(const Duration(seconds: 3), () {
+      try {
+        for (final x in docs.where((x) => x.dirty && !x.isImage)) {
+          final f = _recFile(x.path);
+          f.parent.createSync(recursive: true);
+          f.writeAsStringSync(jsonEncode({'path': x.path, 'content': x.content}));
+        }
+      } catch (_) {}
+    });
+  }
+
+  void _clearRecovery(String path) {
+    try {
+      final f = _recFile(path);
+      if (f.existsSync()) f.deleteSync();
+    } catch (_) {}
+  }
+
+  void _scanRecovery() {
+    recoverable = [];
+    try {
+      final d = Directory(_recDir());
+      if (!d.existsSync()) return;
+      for (final f in d.listSync().whereType<File>()) {
+        try {
+          final j = jsonDecode(f.readAsStringSync()) as Map;
+          final path = '${j['path']}';
+          final content = '${j['content']}';
+          if (!File(path).existsSync() || File(path).readAsStringSync() == content) {
+            f.deleteSync();
+            continue;
+          }
+          recoverable.add((path: path, content: content));
+        } catch (_) {
+          try {
+            f.deleteSync();
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
+
+  void restoreRecovered() {
+    for (final r in recoverable) {
+      openFile(r.path);
+      final d = _doc(r.path);
+      if (d != null) {
+        reloadDoc(d.path, r.content);
+        d.dirty = true;
+        dirtyRev.value++;
+      }
+    }
+    recoverable = [];
+    notifyListeners();
+  }
+
+  void discardRecovered() {
+    for (final r in recoverable) {
+      _clearRecovery(r.path);
+    }
+    recoverable = [];
+    notifyListeners();
+  }
+
+  // ---------- Búsqueda: incluir / excluir archivos ----------
+  RegExp _globRe(String g) {
+    g = g.replaceAll('\\', '/');
+    if (g.endsWith('/')) return RegExp('(^|/)${RegExp.escape(g)}');
+    final re = RegExp.escape(g).replaceAll(r'\*\*', '.*').replaceAll(r'\*', '[^/]*').replaceAll(r'\?', '.');
+    return RegExp('(^|/)$re\$');
+  }
+
+  List<RegExp> _globs(String s) => [for (final g in s.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty)) _globRe(g)];
+
+  bool _passes(String path, List<RegExp> inc, List<RegExp> exc) {
+    final rel = p.relative(path, from: root!).replaceAll('\\', '/');
+    if (inc.isNotEmpty && !inc.any((r) => r.hasMatch(rel))) return false;
+    return !exc.any((r) => r.hasMatch(rel));
+  }
+
+  // ---------- Tareas del proyecto ----------
+  List<Map<String, String>> projectTasks = [];
+
+  void _loadTasks() {
+    projectTasks = [];
+    try {
+      final j = _prefs?.getString('tasks:$root');
+      if (j != null) projectTasks = [for (final e in (jsonDecode(j) as List)) Map<String, String>.from(e as Map)];
+    } catch (_) {}
+  }
+
+  void saveTasks(List<Map<String, String>> list) {
+    projectTasks = list;
+    _prefs?.setString('tasks:$root', jsonEncode(list));
+    notifyListeners();
+  }
+
+  void runTask(Map<String, String> t) {
+    if (root == null) return;
+    final term = addTerminal();
+    term.name = t['name'] ?? 'Tarea';
+    term.cwd = root!;
+    term.run(t['cmd'] ?? '');
+    info('Tarea «${term.name}» iniciada en una terminal nueva');
+  }
+
+  // ---------- Ayuda de firmas (LSP) ----------
+  Future<Map<String, dynamic>?> lspSignature(String path, int l, int c) async => await _lsp?.signatureHelp(path, l, c);
+
+  // ---------- Inspector de widgets y herramientas de Flutter (VM Service) ----------
+  VmService? _vm;
+  String? vmServiceUri;
+  Map? inspectorTree;
+  String inspectorError = '';
+  bool inspectorBusy = false;
+  final flutterToggles = <String, bool>{};
+  bool slowAnimations = false;
+
+  void _vmReset() {
+    vmServiceUri = null;
+    _vm?.close();
+    _vm = null;
+    inspectorTree = null;
+    inspectorError = '';
+    flutterToggles.clear();
+    slowAnimations = false;
+  }
+
+  Future<VmService> _vmConn() async {
+    final uri = vmServiceUri;
+    if (uri == null) throw 'No hay una app Flutter en ejecución. Pulsa Run o Depurar.';
+    var v = _vm;
+    if (v == null || !v.connected) {
+      v = VmService();
+      await v.connect(uri);
+      _vm = v;
+    }
+    return v;
+  }
+
+  Future<void> refreshInspector() async {
+    if (inspectorBusy) return;
+    inspectorBusy = true;
+    inspectorError = '';
+    notifyListeners();
+    try {
+      final v = await _vmConn();
+      try {
+        await v.ext('ext.flutter.inspector.setPubRootDirectories', {'arg0': Uri.directory(root ?? '.').toString()});
+      } catch (_) {}
+      dynamic t = await v.ext('ext.flutter.inspector.getRootWidgetSummaryTree', {'objectGroup': 'darter'});
+      if (t is String) t = jsonDecode(t);
+      inspectorTree = t is Map ? t : null;
+      if (inspectorTree == null) inspectorError = 'El inspector no devolvió un árbol de widgets.';
+    } catch (e) {
+      inspectorError = '$e';
+      inspectorTree = null;
+    }
+    inspectorBusy = false;
+    notifyListeners();
+  }
+
+  Future<void> toggleFlutterExt(String ext) async {
+    try {
+      final v = await _vmConn();
+      final on = !(flutterToggles[ext] ?? false);
+      await v.ext(ext, {'enabled': on ? 'true' : 'false'});
+      flutterToggles[ext] = on;
+      notifyListeners();
+    } catch (e) {
+      info('$e');
+    }
+  }
+
+  Future<void> toggleSlowAnimations() async {
+    try {
+      final v = await _vmConn();
+      final on = !slowAnimations;
+      await v.ext('ext.flutter.timeDilation', {'timeDilation': on ? '5.0' : '1.0'});
+      slowAnimations = on;
+      notifyListeners();
+    } catch (e) {
+      info('$e');
+    }
   }
 
   // ---------- Atajos ----------

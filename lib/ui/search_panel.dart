@@ -12,6 +12,7 @@ class SearchPanel extends StatefulWidget {
 
 class _SearchPanelState extends State<SearchPanel> {
   final _q = TextEditingController(), _r = TextEditingController();
+  final _inc = TextEditingController(), _exc = TextEditingController();
   bool cs = false, rx = false, ww = false, busy = false;
   List<SearchHit> hits = [];
   String msg = '';
@@ -21,7 +22,7 @@ class _SearchPanelState extends State<SearchPanel> {
     if (_q.text.isEmpty || s.root == null) return;
     setState(() { busy = true; msg = ''; });
     try {
-      final r = await s.search(_q.text, caseSensitive: cs, regex: rx, whole: ww);
+      final r = await s.search(_q.text, caseSensitive: cs, regex: rx, whole: ww, include: _inc.text, exclude: _exc.text);
       if (!mounted) return;
       setState(() { hits = r; msg = '${r.length} resultados en ${r.map((e) => e.path).toSet().length} archivos'; });
     } catch (_) {
@@ -34,7 +35,7 @@ class _SearchPanelState extends State<SearchPanel> {
     if (_q.text.isEmpty || hits.isEmpty) return;
     final files = hits.map((e) => e.path).toSet().length;
     if (!await confirm(context, s, 'Reemplazar todo', 'Se modificarán $files archivos en disco. ¿Continuar?', ok: 'Reemplazar')) return;
-    final n = await s.replaceAll(_q.text, _r.text, caseSensitive: cs, regex: rx, whole: ww);
+    final n = await s.replaceAll(_q.text, _r.text, caseSensitive: cs, regex: rx, whole: ww, include: _inc.text, exclude: _exc.text);
     await _go();
     if (mounted) setState(() => msg = 'Reemplazado en $n archivos');
   }
@@ -106,6 +107,10 @@ class _SearchPanelState extends State<SearchPanel> {
             const SizedBox(width: 6),
             iconBtn(Icons.find_replace, 'Reemplazar todo', hits.isEmpty ? null : _replace, size: 20),
           ]),
+          const SizedBox(height: 8),
+          TextField(controller: _inc, onSubmitted: (_) => _go(), style: const TextStyle(fontSize: 12.5), decoration: const InputDecoration(hintText: 'Incluir: *.dart, lib/   (separa con comas)')),
+          const SizedBox(height: 8),
+          TextField(controller: _exc, onSubmitted: (_) => _go(), style: const TextStyle(fontSize: 12.5), decoration: const InputDecoration(hintText: 'Excluir: test/, *.g.dart')),
           const SizedBox(height: 6),
           Align(alignment: Alignment.centerLeft, child: Text(busy ? 'Buscando…' : msg, style: TextStyle(fontSize: 12, color: t.muted))),
         ]),

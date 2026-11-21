@@ -38,6 +38,12 @@ class LspClient {
             'publishDiagnostics': {},
             'definition': {},
             'documentSymbol': {'hierarchicalDocumentSymbolSupport': true},
+            'signatureHelp': {
+              'signatureInformation': {
+                'documentationFormat': ['markdown', 'plaintext'],
+                'parameterInformation': {'labelOffsetSupport': true}
+              }
+            },
             'references': {},
             'rename': {'prepareSupport': false},
             'codeAction': {
@@ -200,6 +206,28 @@ class LspClient {
     final range = (r['range'] ?? r['targetSelectionRange']) as Map?;
     if (uri == null || range == null) return null;
     return (path: Uri.parse(uri).toFilePath(), line: range['start']['line'] as int, col: range['start']['character'] as int);
+  }
+
+  Future<Map<String, dynamic>?> signatureHelp(String path, int l, int c) async {
+    if (!await ready) return null;
+    final r = await _request('textDocument/signatureHelp', _pos(path, l, c));
+    if (r is! Map) return null;
+    String doc(dynamic d) => d == null ? '' : (d is Map ? '${d['value'] ?? ''}' : '$d');
+    final sigs = <Map<String, dynamic>>[];
+    for (final sg in (r['signatures'] as List? ?? [])) {
+      if (sg is! Map) continue;
+      sigs.add({
+        'label': '${sg['label']}',
+        'doc': doc(sg['documentation']),
+        'params': [
+          for (final pr in (sg['parameters'] as List? ?? []))
+            if (pr is Map) {'label': pr['label'], 'doc': doc(pr['documentation'])}
+        ],
+        'active': sg['activeParameter'],
+      });
+    }
+    if (sigs.isEmpty) return null;
+    return {'signatures': sigs, 'activeSignature': r['activeSignature'] ?? 0, 'activeParameter': r['activeParameter'] ?? 0};
   }
 
   Future<List<Map<String, dynamic>>> codeActions(String path, Map range, {List<String>? only}) async {

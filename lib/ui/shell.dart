@@ -22,7 +22,9 @@ import 'git_panel.dart';
 import 'outline_panel.dart';
 import 'run_config.dart';
 import 'search_panel.dart';
+import 'inspector_panel.dart';
 import 'settings_dialog.dart';
+import 'tasks_dialog.dart';
 import 'snippets_dialog.dart';
 import 'test_panel.dart';
 
@@ -49,6 +51,7 @@ class _IdeShellState extends State<IdeShell> {
       _visited.add(3);
     });
     s.onOpenResolver = (path) => showMergeResolver(context, s, path);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkRecovery());
     s.onToast = (m) {
       if (!mounted) return;
       final ms = ScaffoldMessenger.of(context);
@@ -58,6 +61,38 @@ class _IdeShellState extends State<IdeShell> {
   }
 
   void _newProject() => showCreateProject(context, s);
+
+  Future<void> _checkRecovery() async {
+    if (!mounted || s.recoverable.isEmpty) return;
+    final list = s.recoverable;
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: s.theme.panel,
+        surfaceTintColor: Colors.transparent,
+        title: const Text('Cambios sin guardar recuperados', style: TextStyle(fontSize: 16)),
+        content: SizedBox(
+          width: 440,
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('La sesión anterior terminó con archivos modificados que no se guardaron:'),
+            const SizedBox(height: 8),
+            for (final r in list.take(8)) Text('•  ${p.basename(r.path)}', style: const TextStyle(fontSize: 13)),
+            if (list.length > 8) Text('… y ${list.length - 8} más'),
+          ]),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Descartar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Restaurar')),
+        ],
+      ),
+    );
+    if (ok == true) {
+      s.restoreRecovered();
+    } else {
+      s.discardRecovered();
+    }
+  }
 
   Future<void> _todos() async {
     final hits = await s.search(r'\b(TODO|FIXME|HACK|XXX)\b', regex: true, caseSensitive: true);
@@ -149,6 +184,8 @@ class _IdeShellState extends State<IdeShell> {
         PaletteCmd('Buscar actualizaciones…', Icons.system_update_alt, () => showUpdateDialog(context, s)),
         PaletteCmd('Atajos de teclado', Icons.keyboard_outlined, () => showShortcuts(context, s)),
         PaletteCmd('Gestionar snippets propios…', Icons.bolt, () => showSnippetsManager(context, s)),
+        PaletteCmd('Tareas del proyecto…', Icons.checklist_rtl, () => showTasksManager(context, s)),
+        for (final tk in s.projectTasks) PaletteCmd('Tarea: ${tk['name']}', Icons.play_circle_outline, () => s.runTask(tk)),
         PaletteCmd('Ver registro de errores', Icons.bug_report_outlined, () => showErrorLog(context, s)),
         PaletteCmd('Zoom del editor: aumentar', Icons.zoom_in, () => s.zoom(1), hint: 'Ctrl+='),
         PaletteCmd('Zoom del editor: reducir', Icons.zoom_out, () => s.zoom(-1), hint: 'Ctrl+-'),
@@ -371,6 +408,7 @@ class _IdeShellState extends State<IdeShell> {
       (Icons.format_list_bulleted, 'Esquema'),
       (Icons.inventory_2_outlined, 'Dependencias'),
       (Icons.build_outlined, 'Herramientas'),
+      (Icons.widgets_outlined, 'Inspector de widgets'),
     ];
     return Container(
       width: 48,
@@ -409,6 +447,7 @@ class _IdeShellState extends State<IdeShell> {
       () => OutlinePanel(s),
       () => DepsPanel(s),
       _tools,
+      () => InspectorPanel(s),
     ];
     return Stack(fit: StackFit.expand, children: [
       for (var i = 0; i < panels.length; i++)
@@ -466,6 +505,9 @@ class _IdeShellState extends State<IdeShell> {
           it('App Bundle (.aab)', Icons.inventory_outlined, s.buildAppBundle),
           it('Web', Icons.language, s.buildWeb),
           it('Desktop', Icons.desktop_windows_outlined, s.buildDesktop),
+          sec('TAREAS DEL PROYECTO'),
+          for (final tk in s.projectTasks) it(tk['name'] ?? '', Icons.play_circle_outline, () => s.runTask(tk)),
+          it('Gestionar tareas…', Icons.edit_note, () => showTasksManager(context, s)),
           sec('FLUTTER SDK'),
           it('Doctor', Icons.medical_services_outlined, s.doctor, always: true),
           it('Logs del dispositivo', Icons.receipt_long_outlined, s.flutterLogs),

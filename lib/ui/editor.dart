@@ -54,7 +54,7 @@ require(['vs/editor/editor.main'],()=>{
   window.flushNow=()=>{flushChange(ed.getModel());};
   window.ed=monaco.editor.create(document.getElementById('c'),{theme:'vs-dark',automaticLayout:true,fontSize:14,
     minimap:{enabled:true},bracketPairColorization:{enabled:true},smoothScrolling:false,accessibilitySupport:'off',quickSuggestionsDelay:120,scrollBeyondLastLine:false,
-    glyphMargin:true,fixedOverflowWidgets:true,quickSuggestions:{other:true,comments:false,strings:true},model:null});
+    glyphMargin:true,stickyScroll:{enabled:true},fixedOverflowWidgets:true,quickSuggestions:{other:true,comments:false,strings:true},model:null});
   monaco.languages.registerCompletionItemProvider('dart',{triggerCharacters:['.','(',':'],
     provideCompletionItems:async(m,pos,ctx,token)=>{
       flushChange(m);
@@ -112,6 +112,37 @@ require(['vs/editor/editor.main'],()=>{
   ed.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyCode.Equal,()=>call('zoom',1));
   ed.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyCode.Minus,()=>call('zoom',-1));
   ed.addCommand(monaco.KeyMod.CtrlCmd|monaco.KeyCode.Digit0,()=>call('zoom',0));
+  const MC={red:'F44336',pink:'E91E63',purple:'9C27B0',deepPurple:'673AB7',indigo:'3F51B5',blue:'2196F3',lightBlue:'03A9F4',cyan:'00BCD4',teal:'009688',green:'4CAF50',lightGreen:'8BC34A',lime:'CDDC39',yellow:'FFEB3B',amber:'FFC107',orange:'FF9800',deepOrange:'FF5722',brown:'795548',grey:'9E9E9E',blueGrey:'607D8B',black:'000000',white:'FFFFFF',redAccent:'FF5252',pinkAccent:'FF4081',purpleAccent:'E040FB',indigoAccent:'536DFE',blueAccent:'448AFF',cyanAccent:'18FFFF',tealAccent:'64FFDA',greenAccent:'69F0AE',amberAccent:'FFD740',orangeAccent:'FFAB40',yellowAccent:'FFFF00'};
+  const hex2c=(h,a)=>({red:parseInt(h.slice(0,2),16)/255,green:parseInt(h.slice(2,4),16)/255,blue:parseInt(h.slice(4,6),16)/255,alpha:a});
+  monaco.languages.registerColorProvider('dart',{
+    provideDocumentColors:(m)=>{
+      const out=[];
+      m.getLinesContent().forEach((t,i)=>{
+        const ln=i+1;let r;
+        const re1=/Color\(\s*0x([0-9A-Fa-f]{8})\s*\)/g;
+        while((r=re1.exec(t))){const st=r.index+r[0].indexOf('0x'),h=r[1];
+          out.push({color:hex2c(h.slice(2),parseInt(h.slice(0,2),16)/255),range:{startLineNumber:ln,startColumn:st+1,endLineNumber:ln,endColumn:st+11}});}
+        const re2=/Colors\.([a-zA-Z]+)(?![\w(])/g;
+        while((r=re2.exec(t))){const h=MC[r[1]];
+          if(h)out.push({color:hex2c(h,1),range:{startLineNumber:ln,startColumn:r.index+1,endLineNumber:ln,endColumn:r.index+1+r[0].length}});}
+      });
+      return out;
+    },
+    provideColorPresentations:(m,info)=>{
+      const c=info.color,to=v=>Math.round(v*255).toString(16).padStart(2,'0').toUpperCase();
+      const isHex=m.getValueInRange(new monaco.Range(info.range.startLineNumber,info.range.startColumn,info.range.endLineNumber,info.range.startColumn+2))==='0x';
+      return isHex?[{label:'0x'+to(c.alpha)+to(c.red)+to(c.green)+to(c.blue)}]:[];
+    }
+  });
+  monaco.languages.registerSignatureHelpProvider('dart',{
+    signatureHelpTriggerCharacters:['(',','],signatureHelpRetriggerCharacters:[')'],
+    provideSignatureHelp:async(m,pos)=>{
+      flushChange(m);
+      const r=await call('lspSignature',m.__path,pos.lineNumber-1,pos.column-1);
+      if(!r)return null;
+      return {value:{signatures:r.signatures.map(s=>({label:s.label,documentation:s.doc?{value:s.doc}:undefined,parameters:(s.params||[]).map(p=>({label:p.label,documentation:p.doc?{value:p.doc}:undefined})),activeParameter:s.active==null?undefined:s.active})),activeSignature:r.activeSignature,activeParameter:r.activeParameter},dispose:()=>{}};
+    }
+  });
   const lensCmd=ed.addCommand(0,(acc,kind,path,name)=>callF('lens',kind,path,name||''));
   monaco.languages.registerCodeLensProvider('dart',{
     provideCodeLenses:(m)=>{
@@ -486,6 +517,7 @@ class _EditorAreaState extends State<EditorArea> {
                     c.addJavaScriptHandler(handlerName: 'lspCompletion', callback: (a) => s.lspCompletion(a[0], (a[1] as num).toInt(), (a[2] as num).toInt()));
                     c.addJavaScriptHandler(handlerName: 'lspHover', callback: (a) => s.lspHover(a[0], (a[1] as num).toInt(), (a[2] as num).toInt()));
                     c.addJavaScriptHandler(handlerName: 'lspDefinition', callback: (a) => s.lspDefinition(a[0], (a[1] as num).toInt(), (a[2] as num).toInt()));
+                    c.addJavaScriptHandler(handlerName: 'lspSignature', callback: (a) => s.lspSignature(a[0], _i(a[1]), _i(a[2])));
                     c.addJavaScriptHandler(handlerName: 'codeActions', callback: (a) => _codeActions(a));
                     c.addJavaScriptHandler(handlerName: 'rename', callback: (a) => _rename(a));
                     c.addJavaScriptHandler(handlerName: 'references', callback: (a) => _references(a));
