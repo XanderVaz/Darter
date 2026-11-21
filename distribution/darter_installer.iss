@@ -4,7 +4,7 @@
 ; AJUSTA: AppPublisher y el nombre del .exe (el nombre del proyecto de Flutter, p. ej. darter.exe).
 
 #ifndef AppVersion
-  #define AppVersion "0.1.13"
+  #define AppVersion "0.1.14"
 #endif
 #define AppName "Darter"
 #define AppExe "darter.exe"
