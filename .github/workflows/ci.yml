@@ -1,0 +1,28 @@
+# Comprueba que el proyecto compila y analiza sin errores en cada push / pull request.
+# Solo falla con ERRORES (los avisos y sugerencias no detienen el flujo).
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Analizar
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Pruebas (si existen)
+        if: ${{ hashFiles('test/**/*_test.dart') != '' }}
+        run: flutter test
