@@ -88,6 +88,14 @@ Future<ReleaseInfo?> fetchLatestRelease(String owner, String repo, {bool beta = 
   return null;
 }
 
+/// Release concreta por etiqueta (para mostrar las novedades tras actualizar).
+Future<ReleaseInfo?> fetchReleaseByTag(String owner, String repo, String tag) async {
+  final res = await http.get(Uri.parse('https://api.github.com/repos/$owner/$repo/releases/tags/$tag'), headers: _headers).timeout(const Duration(seconds: 12));
+  if (res.statusCode != 200) return null;
+  final j = jsonDecode(utf8.decode(res.bodyBytes));
+  return j is Map ? _parse(j) : null;
+}
+
 /// Elige el archivo de la release que corresponde a este sistema operativo.
 /// Convención: el nombre debe contener «windows», «macos» o «linux».
 ReleaseAsset? pickAsset(ReleaseInfo r) {

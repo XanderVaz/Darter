@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import '../app_info.dart';
+import '../services/updater.dart';
 import '../state/ide_state.dart';
 import '../theme/ide_theme.dart';
 import 'about_dialog.dart';
@@ -14,6 +15,7 @@ import 'logo.dart';
 import 'create_project.dart';
 import 'debug_panel.dart';
 import 'diff_view.dart';
+import 'env_dialog.dart';
 import 'merge_resolver.dart';
 import 'deps_panel.dart';
 import 'editor.dart';
@@ -51,7 +53,7 @@ class _IdeShellState extends State<IdeShell> {
       _visited.add(3);
     });
     s.onOpenResolver = (path) => showMergeResolver(context, s, path);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkRecovery());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startupFlow());
     s.onToast = (m) {
       if (!mounted) return;
       final ms = ScaffoldMessenger.of(context);
@@ -61,6 +63,21 @@ class _IdeShellState extends State<IdeShell> {
   }
 
   void _newProject() => showCreateProject(context, s);
+
+  Future<void> _startupFlow() async {
+    await _checkRecovery();
+    if (!mounted) return;
+    if (s.firstRun) {
+      await showEnvCheck(context, s, welcome: true);
+      s.markVersionSeen();
+    } else if (s.versionChanged) {
+      s.markVersionSeen();
+      if (kRepoConfigured) {
+        final r = await fetchReleaseByTag(kGithubOwner, kGithubRepo, 'v$kAppVersion').catchError((_) => null);
+        if (mounted && r != null && r.body.trim().isNotEmpty) await showWhatsNew(context, s, r);
+      }
+    }
+  }
 
   Future<void> _checkRecovery() async {
     if (!mounted || s.recoverable.isEmpty) return;
@@ -183,6 +200,7 @@ class _IdeShellState extends State<IdeShell> {
         PaletteCmd('Acerca de $kAppName', Icons.info_outline, () => showAboutDarter(context, s)),
         PaletteCmd('Buscar actualizaciones…', Icons.system_update_alt, () => showUpdateDialog(context, s)),
         PaletteCmd('Atajos de teclado', Icons.keyboard_outlined, () => showShortcuts(context, s)),
+        PaletteCmd('Verificar entorno (Flutter, Dart, Git)…', Icons.health_and_safety_outlined, () => showEnvCheck(context, s)),
         PaletteCmd('Gestionar snippets propios…', Icons.bolt, () => showSnippetsManager(context, s)),
         PaletteCmd('Tareas del proyecto…', Icons.checklist_rtl, () => showTasksManager(context, s)),
         for (final tk in s.projectTasks) PaletteCmd('Tarea: ${tk['name']}', Icons.play_circle_outline, () => s.runTask(tk)),
@@ -310,6 +328,7 @@ class _IdeShellState extends State<IdeShell> {
             const PopupMenuItem(value: 'update', child: Text('Buscar actualizaciones…')),
             const PopupMenuDivider(),
             const PopupMenuItem(value: 'keys', child: Text('Atajos de teclado')),
+            const PopupMenuItem(value: 'env', child: Text('Verificar entorno (Flutter, Dart, Git)…')),
             PopupMenuItem(value: 'notes', enabled: kRepoConfigured, child: const Text('Notas de la versión (GitHub)')),
             PopupMenuItem(value: 'issue', enabled: kRepoConfigured, child: const Text('Reportar un problema')),
             const PopupMenuItem(value: 'log', child: Text('Ver registro de errores')),
@@ -317,6 +336,7 @@ class _IdeShellState extends State<IdeShell> {
             if (v == 'about') showAboutDarter(context, s);
             if (v == 'update') showUpdateDialog(context, s);
             if (v == 'keys') showShortcuts(context, s);
+            if (v == 'env') showEnvCheck(context, s);
             if (v == 'notes') s.openUrl('$kRepoUrl/releases/tag/v$kAppVersion');
             if (v == 'issue') s.openUrl(issueUrl());
             if (v == 'log') showErrorLog(context, s);

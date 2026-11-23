@@ -127,6 +127,36 @@ class _SettingsDialogState extends State<_SettingsDialog> {
               ]),
             ),
             _label('TEMA'),
+            _sw('Seguir el tema del sistema', 'Cambia entre claro y oscuro automáticamente según Windows', s.followSystem, (v) => s.setFollowSystem(v)),
+            if (s.followSystem)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(children: [
+                  const Text('Oscuro'),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: DropdownButton<String>(
+                      isExpanded: true,
+                      value: s.darkThemeId,
+                      dropdownColor: t.side,
+                      items: [for (final th in IdeTheme.all.where((x) => x.dark)) DropdownMenuItem(value: th.id, child: Text(th.name))],
+                      onChanged: (v) => setState(() => s.setSystemThemes(dark: v)),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  const Text('Claro'),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: DropdownButton<String>(
+                      isExpanded: true,
+                      value: s.lightThemeId,
+                      dropdownColor: t.side,
+                      items: [for (final th in IdeTheme.all.where((x) => !x.dark)) DropdownMenuItem(value: th.id, child: Text(th.name))],
+                      onChanged: (v) => setState(() => s.setSystemThemes(light: v)),
+                    ),
+                  ),
+                ]),
+              ),
             Wrap(spacing: 10, runSpacing: 10, children: [
               for (final th in IdeTheme.all)
                 InkWell(

@@ -25,17 +25,37 @@ Future<void> main() async {
   }, (e, st) => AppLog.error(e, st));
 }
 
-class DartIdeApp extends StatelessWidget {
+class DartIdeApp extends StatefulWidget {
   const DartIdeApp({super.key, required this.state});
   final IdeState state;
   @override
+  State<DartIdeApp> createState() => _DartIdeAppState();
+}
+
+class _DartIdeAppState extends State<DartIdeApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangePlatformBrightness() => widget.state.applySystemTheme();
+
+  @override
   Widget build(BuildContext context) => ValueListenableBuilder<IdeTheme>(
-        valueListenable: state.themeNotifier,
+        valueListenable: widget.state.themeNotifier,
         builder: (_, t, __) => MaterialApp(
           title: kAppName,
           debugShowCheckedModeBanner: false,
           theme: t.material,
-          home: IdeShell(state: state),
+          home: IdeShell(state: widget.state),
         ),
       );
 }

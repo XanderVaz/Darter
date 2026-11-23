@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' show Brightness;
+import 'package:flutter/widgets.dart' show WidgetsBinding;
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -253,11 +255,16 @@ class IdeState extends ChangeNotifier {
     fontFamily = _prefs!.getString('fontFamily') ?? '';
     fontLigatures = _prefs!.getBool('fontLigatures') ?? false;
     tabSize = _prefs!.getInt('tabSize') ?? 2;
+    followSystem = _prefs!.getBool('followSystem') ?? false;
+    lightThemeId = _prefs!.getString('lightThemeId') ?? 'light';
+    darkThemeId = _prefs!.getString('darkThemeId') ?? 'dark';
+    lastSeenVersion = _prefs!.getString('lastSeenVersion') ?? '';
     _loadSnippets();
     final r = _prefs!.getString('root');
     if (r != null && Directory(r).existsSync()) await openProject(r, restoreTabs: true);
     if (terminals.isEmpty) addTerminal();
     _scanRecovery();
+    applySystemTheme();
     await initMonaco();
     if (autoCheckUpdates && DateTime.now().millisecondsSinceEpoch - lastUpdateCheck > 20 * 3600 * 1000) {
       checkForUpdates(silent: true);
@@ -2463,6 +2470,42 @@ class IdeState extends ChangeNotifier {
     } catch (e) {
       info('$e');
     }
+  }
+
+  // ---------- Tema del sistema y primer inicio / novedades ----------
+  bool followSystem = false;
+  String lightThemeId = 'light', darkThemeId = 'dark';
+  String lastSeenVersion = '';
+
+  bool get firstRun => lastSeenVersion.isEmpty;
+  bool get versionChanged => lastSeenVersion.isNotEmpty && lastSeenVersion != kAppVersion;
+
+  void markVersionSeen() {
+    lastSeenVersion = kAppVersion;
+    _prefs?.setString('lastSeenVersion', kAppVersion);
+  }
+
+  void applySystemTheme() {
+    if (!followSystem) return;
+    final b = WidgetsBinding.instance.platformDispatcher.platformBrightness;
+    final id = b == Brightness.dark ? darkThemeId : lightThemeId;
+    if (theme.id != id) setTheme(IdeTheme.byId(id));
+  }
+
+  void setFollowSystem(bool v) {
+    followSystem = v;
+    _prefs?.setBool('followSystem', v);
+    if (v) applySystemTheme();
+    notifyListeners();
+  }
+
+  void setSystemThemes({String? light, String? dark}) {
+    lightThemeId = light ?? lightThemeId;
+    darkThemeId = dark ?? darkThemeId;
+    _prefs?.setString('lightThemeId', lightThemeId);
+    _prefs?.setString('darkThemeId', darkThemeId);
+    applySystemTheme();
+    notifyListeners();
   }
 
   // ---------- Atajos ----------

@@ -502,3 +502,68 @@ class _ErrorLogState extends State<_ErrorLog> {
     );
   }
 }
+
+// ───────────────────────── Novedades de la versión ─────────────────────────
+String formatNotes(String body) {
+  final out = <String>[];
+  for (var l in const LineSplitter().convert(body)) {
+    l = l.replaceAllMapped(RegExp(r'\*\*(.+?)\*\*'), (m) => m.group(1)!).replaceAllMapped(RegExp(r'\[(.+?)\]\(.+?\)'), (m) => m.group(1)!).replaceAll('`', '');
+    if (l.startsWith('#')) {
+      out.add('\n${l.replaceFirst(RegExp(r'^#+\s*'), '').toUpperCase()}');
+    } else if (RegExp(r'^\s*[-*]\s+').hasMatch(l)) {
+      out.add('  •  ${l.replaceFirst(RegExp(r'^\s*[-*]\s+'), '')}');
+    } else {
+      out.add(l);
+    }
+  }
+  return out.join('\n').trim();
+}
+
+Future<void> showWhatsNew(BuildContext c, IdeState s, ReleaseInfo r) => showDialog<void>(context: c, builder: (_) => _WhatsNew(s, r));
+
+class _WhatsNew extends StatelessWidget {
+  const _WhatsNew(this.s, this.r);
+  final IdeState s;
+  final ReleaseInfo r;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = s.theme;
+    return Dialog(
+      backgroundColor: t.panel,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: t.border)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 620),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              const LogoMark(size: 44, background: true),
+              const SizedBox(width: 14),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Novedades de $kAppName v${r.version}', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+                Text('Acabas de actualizar. Esto es lo nuevo:', style: TextStyle(fontSize: 12.5, color: t.muted)),
+              ])),
+            ]),
+            const SizedBox(height: 16),
+            Flexible(
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(color: t.bg, borderRadius: BorderRadius.circular(10), border: Border.all(color: t.border)),
+                child: SingleChildScrollView(child: SelectableText(formatNotes(r.body), style: const TextStyle(fontSize: 13, height: 1.5))),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+              TextButton(onPressed: () => s.openUrl(r.url), child: const Text('Ver en GitHub')),
+              const SizedBox(width: 8),
+              FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Entendido')),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
+}
